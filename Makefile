@@ -16,7 +16,8 @@ PLATFORMS := \
 	darwin/amd64 \
 	darwin/arm64 \
 	linux/amd64 \
-	linux/arm64
+	linux/arm64 \
+	windows/amd64
 
 .PHONY: build build-all package test clean runtime-image help
 
@@ -34,7 +35,8 @@ build-all:
 define build_platform
 	$(eval OS   := $(word 1,$(subst /, ,$(1))))
 	$(eval ARCH := $(word 2,$(subst /, ,$(1))))
-	$(eval OUT  := $(BIN_DIR)/$(BINARY)-$(OS)-$(ARCH))
+	$(eval EXT  := $(if $(filter windows,$(OS)),.exe,))
+	$(eval OUT  := $(BIN_DIR)/$(BINARY)-$(OS)-$(ARCH)$(EXT))
 	@echo "Building $(OUT)..."
 	GOOS=$(OS) GOARCH=$(ARCH) go build $(LDFLAGS) -o $(OUT) .
 	@scripts/codesign-darwin.sh $(OUT) "$(CODESIGN_IDENTITY)"
@@ -46,12 +48,13 @@ package: build-all
 	$(foreach platform,$(PLATFORMS), \
 		$(eval OS   := $(word 1,$(subst /, ,$(platform)))) \
 		$(eval ARCH := $(word 2,$(subst /, ,$(platform)))) \
-		$(eval BIN  := $(BIN_DIR)/$(BINARY)-$(OS)-$(ARCH)) \
+		$(eval EXT  := $(if $(filter windows,$(OS)),.exe,)) \
+		$(eval BIN  := $(BIN_DIR)/$(BINARY)-$(OS)-$(ARCH)$(EXT)) \
 		$(eval ZIP  := $(BIN_DIR)/$(BINARY)-$(VERSION)-$(OS)-$(ARCH).zip) \
 		$(eval STAGE := $(BIN_DIR)/_pkg-$(OS)-$(ARCH)) \
 		rm -rf $(STAGE) && mkdir -p $(STAGE) ; \
-		cp $(BIN) $(STAGE)/$(BINARY) ; \
-		zip -j $(ZIP) $(STAGE)/$(BINARY) ; \
+		cp $(BIN) $(STAGE)/$(BINARY)$(EXT) ; \
+		zip -j $(ZIP) $(STAGE)/$(BINARY)$(EXT) ; \
 		rm -rf $(STAGE) ;)
 	@scripts/notarize-darwin.sh $(BIN_DIR)/$(BINARY)-$(VERSION)-darwin-amd64.zip "$(NOTARY_PROFILE)"
 	@scripts/notarize-darwin.sh $(BIN_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip "$(NOTARY_PROFILE)"
