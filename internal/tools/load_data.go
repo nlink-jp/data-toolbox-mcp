@@ -3,12 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
@@ -21,22 +18,15 @@ type loadDataArgs struct {
 	TableName   string `json:"table_name"`
 }
 
-// LoadDataResult is the structured return value of load_data.
+// LoadDataResult is the structured return value of load_data and load_from_work.
 type LoadDataResult struct {
 	RowsLoaded int                 `json:"rows_loaded"`
 	Schema     []map[string]string `json:"schema"`
 }
 
-// tableNamePattern guards the table name interpolated into the SQL identifier
-// position. Anything else would let a malicious value escape the identifier
-// quoting.
-var tableNamePattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
-
-// ErrInvalidTableName is the sentinel for an invalid SQL identifier in
-// load_data's table_name. errors.Is matches by Code.
-var ErrInvalidTableName = toolerr.New(toolerr.CodeInvalidTableName, "invalid table_name")
-
-// LoadData implements the load_data MCP tool.
+// LoadData implements the load_data MCP tool. Host file → workspace ingest.
+// Uses ResolveAndCheck for allowed_paths defense; the reader, script, and
+// result-parsing logic is shared with load_from_work via load_helpers.go.
 func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, rawArgs json.RawMessage) (any, error) {
 	var args loadDataArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
@@ -46,9 +36,8 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 		return nil, toolerr.New(toolerr.CodeMissingArgument,
 			"workspace_id, file_path, and table_name are required")
 	}
-	if !tableNamePattern.MatchString(args.TableName) {
-		return nil, toolerr.Newf(toolerr.CodeInvalidTableName,
-			"invalid table_name %q: must match ^[a-zA-Z_][a-zA-Z0-9_]*$", args.TableName)
+	if err := validateTableName(args.TableName); err != nil {
+		return nil, err
 	}
 
 	resolved, err := ResolveAndCheck(args.FilePath, cfg.Workspace.AllowedPaths)
@@ -70,56 +59,9 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 		return nil, toolerr.Newf(toolerr.CodeWorkspaceFailed, "copy host file: %v", err)
 	}
 
-	readFn := chooseReader(resolved)
 	containerPath := "/work/_upload/" + filepath.Base(resolved)
-
-	script := fmt.Sprintf(`
-import duckdb, json
-con = duckdb.connect("/work/analysis.duckdb")
-con.execute('CREATE OR REPLACE TABLE "%s" AS SELECT * FROM %s(?)', [%q])
-n = con.execute('SELECT COUNT(*) FROM "%s"').fetchone()[0]
-schema = con.execute('DESCRIBE "%s"').fetchall()
-print(json.dumps({
-    "rows_loaded": n,
-    "schema": [{"name": r[0], "type": r[1]} for r in schema],
-}))
-`,
-		args.TableName, readFn, containerPath, args.TableName, args.TableName,
-	)
-
-	res, err := execScript(ctx, mgr, w, cfg, "load", script)
-	if err != nil {
-		return nil, toolerr.Newf(toolerr.CodeContainerFailed, "podman exec: %v", err)
-	}
-	if res.ExitCode != 0 {
-		return nil, toolerr.Newf(toolerr.CodeScriptFailed,
-			"load_data script failed (exit %d): %s", res.ExitCode, strings.TrimSpace(string(res.Stderr))).
-			WithDetails(map[string]any{
-				"exit_code": res.ExitCode,
-				"stderr":    string(res.Stderr),
-			})
-	}
-
-	var out LoadDataResult
-	if err := json.Unmarshal(res.Stdout, &out); err != nil {
-		return nil, toolerr.Newf(toolerr.CodeScriptOutputParse,
-			"parse python output: %v", err).WithDetails(map[string]any{
-			"stdout": string(res.Stdout),
-			"stderr": string(res.Stderr),
-		})
-	}
-	return out, nil
-}
-
-func chooseReader(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".json", ".jsonl", ".ndjson":
-		return "read_json_auto"
-	case ".parquet":
-		return "read_parquet"
-	default:
-		return "read_csv_auto"
-	}
+	return runLoadScript(ctx, mgr, w, cfg, "load",
+		args.TableName, chooseReader(resolved), containerPath)
 }
 
 func copyFile(src, dst string) error {

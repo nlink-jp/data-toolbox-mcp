@@ -98,4 +98,47 @@ func Register(srv *mcpserver.Server, mgr *workspace.Manager, cfg *config.Config)
 	}, func(ctx context.Context, args json.RawMessage) (any, error) {
 		return DescribeRuntime(ctx, mgr, cfg, args)
 	})
+
+	// --- v0.3.0 tools ---
+
+	// ADR-0008: return generated artifacts as MCP image / text content blocks.
+	srv.RegisterTool(mcpserver.Tool{
+		Name:        "attach_files",
+		Description: "Return files from the workspace's /work as MCP content blocks. Images come back as inline image content (PNG/JPG/SVG/GIF/WEBP/BMP); CSV/JSON/TXT/MD as text content; other types as metadata-only (host path + size + sha256). Use this to hand plots and exports back to the user when the client cannot resolve host paths directly.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"workspace_id": {"type":"string"},
+				"paths": {
+					"type": "array",
+					"items": {"type":"string","description":"\"/work/<sub>\" or \"<sub>\" relative to the workspace /work directory."},
+					"minItems": 1,
+					"maxItems": 16
+				}
+			},
+			"required": ["workspace_id","paths"],
+			"additionalProperties": false
+		}`),
+	}, func(ctx context.Context, args json.RawMessage) (any, error) {
+		return AttachFiles(ctx, mgr, cfg, args)
+	})
+
+	// ADR-0009: table-ize files that already live inside the workspace's
+	// /work mount, bypassing allowed_paths.
+	srv.RegisterTool(mcpserver.Tool{
+		Name:        "load_from_work",
+		Description: "Table-ize a CSV/JSON/Parquet file that already lives inside the workspace's /work directory. Use this for files written by execute_code (e.g. a polars write_csv output) when you want them back as DuckDB tables. file_path must start with /work/. For host files, use load_data instead.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"workspace_id": {"type":"string"},
+				"file_path":    {"type":"string","description":"Container-absolute path under /work, e.g. \"/work/derived.csv\" or \"/work/subdir/data.parquet\"."},
+				"table_name":   {"type":"string","description":"DuckDB table name to create or replace."}
+			},
+			"required": ["workspace_id","file_path","table_name"],
+			"additionalProperties": false
+		}`),
+	}, func(ctx context.Context, args json.RawMessage) (any, error) {
+		return LoadFromWork(ctx, mgr, cfg, args)
+	})
 }

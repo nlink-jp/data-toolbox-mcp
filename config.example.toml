@@ -38,3 +38,10 @@ network = "none"
 [query]
 # Auto LIMIT applied to query_data when the SQL has no LIMIT clause.
 default_row_limit = 20000
+
+# attach_files response size caps (ADR-0008). Files larger than max_single
+# are downgraded to metadata-only; once cumulative attached bytes reach
+# max_total, remaining files are also downgraded.
+[attach]
+max_single_size_bytes = 10485760   # 10 MiB
+max_total_size_bytes  = 20971520   # 20 MiB

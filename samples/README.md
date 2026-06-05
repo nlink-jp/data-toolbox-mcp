@@ -104,6 +104,36 @@ Claude Desktop を再起動して設定を反映。
 - 戻り値の `host_work_dir` フィールド (例: `/Users/magi/.data-toolbox/samples/work/`) を見て、LLM が「`{host_work_dir}sales.png` に保存しました」とユーザーに具体的なホスト側パスを案内する
 - **base64 で PNG を埋め込んで返すのは間違い** — `describe_runtime` の notes (`ARTIFACT EXCHANGE` 説明) でも明確に禁じている (v0.2.1 amendment)
 
+### Stage 10: 画像のインライン返却 (v0.3.0 / ADR-0008)
+
+v0.2.1 では「ホストのパスを伝える」までだったが、v0.3.0 では `attach_files` で **チャットにインライン表示できる** ようになった。
+
+> 月別の売上を棒グラフで描いて `/work/sales.png` に保存して、`attach_files` でチャットに表示して。
+
+期待動作:
+- `execute_code` でグラフ生成 → `attach_files(workspace_id="samples", paths=["/work/sales.png"])` を呼ぶ
+- 戻り値が MCP image content として返り、Claude Desktop / Cursor が **接続済みフォルダ設定なしで** 直接インライン表示する
+- ファイル種別は拡張子から自動判定 (PNG/JPG/SVG → image, CSV/JSON/MD → text, その他 → metadata-only)
+- 単体 10 MiB / 合計 20 MiB を超えるファイルは metadata-only に降格
+
+> 描画した PNG と一緒に、`/work/sales_summary.csv` も attach_files で返して。
+
+期待動作: 1 回の `attach_files` 呼び出しで複数ファイルを一括返却。CSV は text content、PNG は image content。
+
+### Stage 11: サンドボックス内ファイルを直接 table 化 (v0.3.0 / ADR-0009)
+
+> sales テーブルから region 別の集計を出して、polars で `/work/region_summary.csv` に書き出して。それから `load_from_work` で region_summary テーブルとしてロードして、上位 3 件を query_data で確認して。
+
+期待動作:
+- `execute_code` で polars が CSV を `/work/` に書く
+- **従来は** `allowed_paths` に `~/.data-toolbox/<id>/work` が含まれないため `load_data` で読めず、Python 内で `duckdb.read_csv_auto` するしかなかった
+- **v0.3.0 では** `load_from_work(workspace_id="samples", file_path="/work/region_summary.csv", table_name="region_summary")` で直接 DuckDB の table 化できる
+- `query_data` で `SELECT * FROM region_summary ORDER BY total DESC LIMIT 3` を叩いて確認
+
+> `load_from_work` で `/etc/passwd` を読もうとして。
+
+期待動作: `invalid_arguments` 構造化エラーで拒否 (`file_path must start with /work/` メッセージ)。`/work/../escape.csv` のような traversal も拒否される。
+
 ## サンプルデータの解析でわかること
 
 - region は Tokyo / Osaka / Nagoya / Sapporo / Fukuoka の 5 か所

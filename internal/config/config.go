@@ -18,6 +18,7 @@ type Config struct {
 	Workspace WorkspaceConfig `toml:"workspace"`
 	Container ContainerConfig `toml:"container"`
 	Query     QueryConfig     `toml:"query"`
+	Attach    AttachConfig    `toml:"attach"`
 }
 
 type ServerConfig struct {
@@ -47,6 +48,17 @@ type QueryConfig struct {
 	DefaultRowLimit int `toml:"default_row_limit"`
 }
 
+// AttachConfig controls attach_files response size caps (ADR-0008).
+type AttachConfig struct {
+	// MaxSingleSizeBytes caps the size of a single attached file. Files
+	// larger than this are downgraded to a metadata-only text block.
+	MaxSingleSizeBytes int64 `toml:"max_single_size_bytes"`
+	// MaxTotalSizeBytes caps the cumulative byte budget for one attach_files
+	// call. Once cumulative attached bytes reach this threshold, remaining
+	// files are downgraded to metadata-only.
+	MaxTotalSizeBytes int64 `toml:"max_total_size_bytes"`
+}
+
 // Default returns a fully populated Config with the values documented in
 // docs/{en,ja}/reference/architecture.md §6.3 and ADR-0005.
 func Default() *Config {
@@ -69,6 +81,10 @@ func Default() *Config {
 		},
 		Query: QueryConfig{
 			DefaultRowLimit: 20000,
+		},
+		Attach: AttachConfig{
+			MaxSingleSizeBytes: 10 * 1024 * 1024, // 10 MiB
+			MaxTotalSizeBytes:  20 * 1024 * 1024, // 20 MiB
 		},
 	}
 }

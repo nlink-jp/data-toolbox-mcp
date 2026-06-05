@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-06
+
+Closes the "last mile of artifact handoff" identified during the v0.2.x real-machine verification:
+
+1. The LLM can now return generated artifacts (PNG plots, CSV/JSON snippets, etc.) **as MCP image / text content blocks** instead of via a host file reference, so MCP clients (Claude Desktop) inline-render them with no connected-folder setup.
+2. The LLM can table-ize files **that already live inside the sandbox** (e.g. files written by `execute_code`), without needing them to be present in `allowed_paths`.
+
+### Added
+
+- **`attach_files`** MCP tool (ADR-0008). Returns any of the workspace's `/work` files as MCP content blocks dispatched by extension:
+  - PNG / JPG / JPEG / GIF / WEBP / BMP / SVG → MCP image content (base64 + mimeType). Claude Desktop renders inline.
+  - CSV / TSV / JSON / JSONL / NDJSON / TXT / MD / LOG / YAML / TOML → MCP text content.
+  - All other types → metadata-only (host path + size + sha256 when ≤100 MiB).
+  - Per-file cap `10 MiB` and cumulative cap `20 MiB` (configurable via `[attach] max_single_size_bytes` / `max_total_size_bytes`); over-cap files downgrade to metadata-only.
+  - Path-traversal defense-in-depth: each path is resolved under `<host_work_dir>` with `filepath.Clean` + prefix re-check.
+- **`load_from_work`** MCP tool (ADR-0009). Table-izes a sandbox file by its container-absolute `/work/...` path:
+  - Reads the file directly from `<host_work_dir>` (no copy through `_upload/`).
+  - Reader chosen by extension (CSV / JSON / Parquet), same table as `load_data`.
+  - Requires `/work/` prefix; rejects host paths and traversal attempts.
+  - Bypasses `allowed_paths` because the target is already inside the sandbox.
+- `internal/mcpserver.RawResult` + `ContentBlock` types let a tool handler return multiple content blocks. Existing tools keep returning a single text block (backward compatible).
+- `internal/tools/load_helpers.go` factors `chooseReader` / `validateTableName` / `buildLoadScript` / `runLoadScript` so `load_data` and `load_from_work` share the engine.
+- `[attach]` section in `config.toml` with `max_single_size_bytes` and `max_total_size_bytes` (defaults 10 MiB / 20 MiB).
+
+### Changed
+
+- Tool surface: 6 → 8 (`load_data` / `query_data` / `execute_code` / `list_workspaces` / `delete_workspace` / `describe_runtime` / `attach_files` / `load_from_work`).
+- `load_data` was refactored to use the new shared helpers; behavior unchanged.
+
+### Tests
+
+- 7 new unit tests under `internal/tools` covering `attach_files` (extension dispatch, per-file cap, cumulative cap, traversal rejection, bad-args) and `load_from_work` (non-`/work` rejection, missing-arg / table_name rules).
+- 3 new e2e scenarios under `e2e/v0_3_0_test.go`: `AttachFiles_RoundTrip`, `LoadFromWork_RoundTrip`, `LoadFromWork_RejectsOutsideWork`.
+- Full e2e suite (10 scenarios incl. all v0.1.x / v0.2.x) all green.
+
+### Compatibility
+
+Strictly additive: no tool arguments changed, no result fields removed, no runtime semantics changed.
+
 ## [0.2.1] - 2026-06-05
 
 Surface the on-host path of `/work` to the LLM so generated artifacts (PNG plots, exported CSVs, etc.) are handed back via a filesystem reference instead of base64.

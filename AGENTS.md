@@ -26,13 +26,14 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B |
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B |
 | `internal/workspace/` | workspace_id-scoped Podman + DuckDB lifecycle | C |
-| `internal/tools/` | 6 tools: `load_data` / `query_data` / `execute_code` + v0.2.0 `list_workspaces` / `delete_workspace` / `describe_runtime` | D, v0.2.0 |
+| `internal/tools/` | 8 tools: `load_data` / `query_data` / `execute_code` + v0.2.0 `list_workspaces` / `delete_workspace` / `describe_runtime` + v0.3.0 `attach_files` / `load_from_work` | D, v0.2.0, v0.3.0 |
+| `internal/tools/load_helpers.go` | Shared `chooseReader` / `validateTableName` / `buildLoadScript` / `runLoadScript` used by `load_data` and `load_from_work` | v0.3.0 |
 | `internal/runtime/manifest.go` | Static manifest backing `describe_runtime`; in lock-step with `runtime/Dockerfile` | v0.2.0 |
 | `internal/config/` | config.toml + env-var loading | A/C |
 | `internal/logging/` | log_file + log_level wiring with startup rotation | Phase 2 |
 | `internal/toolerr/` | structured `{code, message, details}` tool errors | Phase 2 |
 | `e2e/` | Dummy MCP client E2E harness (build tag `e2e`) | F, v0.2.0 |
-| `docs/{en,ja}/` | RFP, ADRs (0001-0007), architecture, phase1-plan, v0.2.0-plan | Phase 0, v0.2.0 |
+| `docs/{en,ja}/` | RFP, ADRs (0001-0009), architecture, phase1-plan, v0.2.0-plan, v0.3.0-plan | Phase 0, v0.2.0, v0.3.0 |
 
 ## ADR cheat sheet
 
@@ -43,6 +44,8 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - **ADR-0005**: Local-build distribution. Dockerfile lives at `runtime/Dockerfile` and is embedded via `go:embed` into the binary; `build-runtime` unpacks it and calls `podman build`.
 - **ADR-0006**: `list_workspaces` (no args) + `delete_workspace` (workspace_id) + `describe_runtime` (no args). Disk is the truth source for list/delete; describe_runtime returns the `internal/runtime.Default` manifest merged with the live `network` setting.
 - **ADR-0007**: Runtime image is `python:3.12-slim` + `fonts-noto-cjk` + matplotlib + Pillow with `Noto Sans CJK JP` first in `font.sans-serif` (matplotlib Agg has no per-glyph fallback). Image budget < 900MB.
+- **ADR-0008**: `attach_files` returns workspace `/work` files as MCP image/text/metadata content blocks. Extension-based dispatch, per-file 10 MiB / cumulative 20 MiB caps (configurable via `[attach]`), path-traversal defense-in-depth.
+- **ADR-0009**: `load_from_work` table-izes a `/work/<sub>` file directly, bypassing `allowed_paths` (because the file is already in the sandbox). `file_path` must start with `/work/`.
 
 ## Gotchas
 
@@ -53,6 +56,9 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - For container lifecycle: every container is labeled `app=data-toolbox-mcp`. Orphan detection filters on this label.
 - **Dockerfile + manifest sync**: when you change `runtime/Dockerfile`, update `internal/runtime/manifest.go` in the same commit. The e2e manifest-drift test catches name-set mismatches but not silently mis-pinned versions.
 - **matplotlib font order matters**: matplotlib 3.10's Agg backend renders all text with the first loadable font in `font.sans-serif`. `Noto Sans CJK JP` MUST be first (it covers Latin glyphs too, so no side effect on English).
+- **`attach_files` does not Ensure the workspace**: it only reads from disk (no Podman). Calling it on a workspace_id that was never `Ensure`'d will just report missing files. This is by design — attach is a pure-host operation.
+- **`load_from_work` requires `/work/` prefix**: bare relative paths or any other absolute path are rejected with `invalid_arguments`. Internally it strips `/work/` and resolves against `<host_work_dir>` with prefix re-check; never trust the `/work/` prefix alone for security.
+- **Two ways to load a file**: `load_data` (host file → workspace via allowed_paths) vs `load_from_work` (sandbox file → table). Choose by where the file currently lives; they share the underlying script engine in `internal/tools/load_helpers.go` so behavior is identical post-load.
 
 ## Conventions (organization-wide)
 
