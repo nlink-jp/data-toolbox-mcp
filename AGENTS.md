@@ -26,14 +26,15 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B |
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B |
 | `internal/workspace/` | workspace_id-scoped Podman + DuckDB lifecycle | C |
-| `internal/tools/` | 8 tools: `load_data` / `query_data` / `execute_code` + v0.2.0 `list_workspaces` / `delete_workspace` / `describe_runtime` + v0.3.0 `attach_files` / `load_from_work` | D, v0.2.0, v0.3.0 |
+| `internal/tools/` | 9 tools: `load_data` / `query_data` / `execute_code` + v0.2.0 `list_workspaces` / `delete_workspace` / `describe_runtime` + v0.3.0 `attach_files` / `load_from_work` + v0.4.0 `describe_workspace` | D, v0.2.0, v0.3.0, v0.4.0 |
 | `internal/tools/load_helpers.go` | Shared `chooseReader` / `validateTableName` / `buildLoadScript` / `runLoadScript` used by `load_data` and `load_from_work` | v0.3.0 |
+| `internal/tools/describe_workspace.go` | v0.4.0 `describe_workspace`: SHOW TABLES + DESCRIBE per table in one script | v0.4.0 |
 | `internal/runtime/manifest.go` | Static manifest backing `describe_runtime`; in lock-step with `runtime/Dockerfile` | v0.2.0 |
 | `internal/config/` | config.toml + env-var loading | A/C |
 | `internal/logging/` | log_file + log_level wiring with startup rotation | Phase 2 |
 | `internal/toolerr/` | structured `{code, message, details}` tool errors | Phase 2 |
 | `e2e/` | Dummy MCP client E2E harness (build tag `e2e`) | F, v0.2.0 |
-| `docs/{en,ja}/` | RFP, ADRs (0001-0009), architecture, phase1-plan, v0.2.0-plan, v0.3.0-plan | Phase 0, v0.2.0, v0.3.0 |
+| `docs/{en,ja}/` | RFP, ADRs (0001-0010), architecture, phase1-plan, v0.2.0-plan, v0.3.0-plan, v0.4.0-plan | Phase 0, v0.2.0, v0.3.0, v0.4.0 |
 
 ## ADR cheat sheet
 
@@ -46,6 +47,7 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - **ADR-0007**: Runtime image is `python:3.12-slim` + `fonts-noto-cjk` + matplotlib + Pillow with `Noto Sans CJK JP` first in `font.sans-serif` (matplotlib Agg has no per-glyph fallback). Image budget < 900MB.
 - **ADR-0008**: `attach_files` returns workspace `/work` files as MCP image/text/metadata content blocks. Extension-based dispatch, per-file 10 MiB / cumulative 20 MiB caps (configurable via `[attach]`), path-traversal defense-in-depth.
 - **ADR-0009**: `load_from_work` table-izes a `/work/<sub>` file directly, bypassing `allowed_paths` (because the file is already in the sandbox). `file_path` must start with `/work/`.
+- **ADR-0010** (v0.4.0): UX polish — `describe_workspace` (table+columns), `query_data` returns `truncated/total` + table-not-found hint in `details`, `delete_workspace` accepts `dry_run: true` for preview, four tool descriptions gain a one-line hint.
 
 ## Gotchas
 
@@ -59,6 +61,8 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - **`attach_files` does not Ensure the workspace**: it only reads from disk (no Podman). Calling it on a workspace_id that was never `Ensure`'d will just report missing files. This is by design — attach is a pure-host operation.
 - **`load_from_work` requires `/work/` prefix**: bare relative paths or any other absolute path are rejected with `invalid_arguments`. Internally it strips `/work/` and resolves against `<host_work_dir>` with prefix re-check; never trust the `/work/` prefix alone for security.
 - **Two ways to load a file**: `load_data` (host file → workspace via allowed_paths) vs `load_from_work` (sandbox file → table). Choose by where the file currently lives; they share the underlying script engine in `internal/tools/load_helpers.go` so behavior is identical post-load.
+- **`query_data.total` runs an extra COUNT only on truncation**: when `truncated=true`, an additional `SELECT COUNT(*) FROM (user_sql) sub` runs to fill `total`. Non-truncated queries pay nothing extra. If the COUNT itself times out, `total: null` + `total_unavailable_reason: "count_timed_out"`.
+- **`delete_workspace` dry_run path is non-destructive**: `dry_run: true` runs `Manager.PreviewDelete` which only reads (podman ps + filepath.Walk for disk_usage_bytes). Verify nothing in the dry_run path calls `os.RemoveAll` or `podman rm`.
 
 ## Conventions (organization-wide)
 

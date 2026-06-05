@@ -134,6 +134,26 @@ v0.2.1 では「ホストのパスを伝える」までだったが、v0.3.0 で
 
 期待動作: `invalid_arguments` 構造化エラーで拒否 (`file_path must start with /work/` メッセージ)。`/work/../escape.csv` のような traversal も拒否される。
 
+### Stage 12: workspace スキーマ確認 + 削除の dry-run (v0.4.0 / ADR-0010)
+
+`describe_workspace` で workspace 内に何の table があるか一発で確認できる。セッション再開時の「ここ何ある？」用。
+
+> samples ワークスペースに何の table がある？ describe_workspace で見せて。
+
+期待動作: `{workspace_id: "samples", host_work_dir: "...", container_state: "running", tables: [{name: "sales", columns: [{name: "id", type: "BIGINT"}, ...]}, {name: "products", columns: [...]}, {name: "logs", columns: [...]}]}` が返る。LLM は columns まで一度に把握でき、追加の `query_data` 呼び出し不要。
+
+> sales テーブルにない `nonexistent_table` から SELECT してみて。
+
+期待動作: `query_data` がエラー。エラーの `details` に `missing_table`、`available_tables_in_this_workspace`、`other_workspaces` の hint が乗る。LLM はそのまま「同 workspace の table 一覧から typo を発見」と提案できる (v0.4.0 hint)。
+
+> samples ワークスペースを消したい。まず dry_run で見せて。
+
+期待動作: `delete_workspace(workspace_id="samples", dry_run=true)` が `{would_delete: true, container_id: "...", container_state: "running", host_paths: {base, work, duckdb}, disk_usage_bytes: N}` を返す。**何も消えない** ことが要点。ユーザー承認後に `dry_run=false` で実行する流れ。
+
+> 20001 行のテーブルから SELECT * してみて。
+
+期待動作: `query_data` の自動 LIMIT (既定 20000) に引っかかり `truncated: true, total: 20001` が乗る (v0.4.0 で truncate 時のみ追加 COUNT)。LLM は「20001 行のうち 20000 行を表示しています。続きを SQL で絞り込みますか？」とユーザーに案内できる。
+
 ## サンプルデータの解析でわかること
 
 - region は Tokyo / Osaka / Nagoya / Sapporo / Fukuoka の 5 か所

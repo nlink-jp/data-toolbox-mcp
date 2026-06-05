@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-06
+
+UX polish driven by the LLM-side feedback collected after the v0.3.0 verification. Five additive items in one release (ADR-0010), no breaking changes.
+
+### Added
+
+- **`describe_workspace(workspace_id)`** MCP tool. Returns the full list of user tables with their column schemas. Symmetric to `list_workspaces`: the latter lists workspaces, this one drills into one. Row counts are intentionally excluded (heavy at scale; revisit on demand).
+- **`delete_workspace`** gains a `dry_run` argument (default false). When `true`, returns `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` without removing anything, so the LLM can show "this is what would be deleted" to the user before acting.
+- **`query_data`** result gains `truncated` and `total` (ADR-0010):
+  - `truncated`: alias of `limit_reached` (kept for backward compat).
+  - `total`: the true row count of the un-LIMIT-ed user query. Equal to `row_count` when not truncated; when truncated, an additional `SELECT COUNT(*) FROM (user_sql) sub` is run to fetch the real total.
+  - `total_unavailable_reason`: set (e.g. `"count_timed_out"`) when the extra COUNT couldn't finish.
+- **`query_data`** table-not-found errors now carry a hint. When the stderr looks like `CatalogException: Table "<X>" does not exist`, the structured `script_failed` error's `details` gains `missing_table`, `available_tables_in_this_workspace`, and `other_workspaces` so the LLM can immediately spot a typo / wrong workspace_id / unloaded table.
+- Tool `description` strings expanded for `load_data` / `execute_code` / `query_data` / `delete_workspace` with a one-line hint each (when to use load_from_work / artifact convention / truncated behavior / dry_run knob), surfacing the right tool earlier.
+
+### Changed
+
+- Tool surface: 8 → 9 (`describe_workspace` added).
+- `Manager.PreviewDelete` + `Manager.ContainerStateOf` added to `internal/workspace`.
+
+### Tests
+
+- 4 new e2e scenarios under `e2e/v0_4_0_test.go`:
+  - `TestE2E_v040_QueryData_TruncatedTotal`: 20001-row table → truncated=true + total=20001.
+  - `TestE2E_v040_QueryData_TableNotFoundHint`: missing-table query → details lists available + other workspaces.
+  - `TestE2E_v040_DeleteWorkspace_DryRun`: dry_run=true returns preview, workspace still alive after.
+  - `TestE2E_v040_DescribeWorkspace_RoundTrip`: two seeded tables → describe returns both with full column schemas.
+- All 14 e2e scenarios (v0.1.x through v0.4.0) green in 145s.
+
+### Compatibility
+
+Strictly additive: existing fields retained (`limit_reached`, the bare `delete_workspace` flow). No removed fields, no argument renames, no runtime semantic changes.
+
 ## [0.3.0] - 2026-06-06
 
 Closes the "last mile of artifact handoff" identified during the v0.2.x real-machine verification:

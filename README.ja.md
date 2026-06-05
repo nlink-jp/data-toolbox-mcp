@@ -2,16 +2,17 @@
 
 > DuckDB データ分析 + コンテナ化 Python 実行を単一バイナリの MCP サーバーとして提供。LLM クライアントは持ち込みで。
 
-`data-toolbox-mcp` は任意の MCP クライアント（Claude Desktop, Cursor 等）が、workspace 単位の DuckDB にデータをロードし、SQL や Python を Podman サンドボックス内で実行できるようにする MCP サーバーです。公開するツールは 8 つ:
+`data-toolbox-mcp` は任意の MCP クライアント（Claude Desktop, Cursor 等）が、workspace 単位の DuckDB にデータをロードし、SQL や Python を Podman サンドボックス内で実行できるようにする MCP サーバーです。公開するツールは 9 つ:
 
 - `load_data(workspace_id, file_path, table_name)`
-- `query_data(workspace_id, sql)`
+- `query_data(workspace_id, sql)` — 自動 LIMIT 時は `truncated` + `total` を返す (v0.4.0)
 - `execute_code(workspace_id, language, code)`
 - `list_workspaces()` — セッションを跨いで過去の workspace を発見
-- `delete_workspace(workspace_id)` — workspace を完全に削除
+- `delete_workspace(workspace_id, dry_run?)` — 既定で不可逆。`dry_run: true` で削除予定情報のみ返す (v0.4.0)
 - `describe_runtime()` — コンテナの同梱機能 (python / パッケージ / フォント / network) を開示
 - `attach_files(workspace_id, paths)` — `/work` 内ファイルを MCP の画像 / テキストコンテンツとして返却 (v0.3.0)
 - `load_from_work(workspace_id, file_path, table_name)` — `/work` 内ファイルを直接 DuckDB table 化 (v0.3.0)
+- `describe_workspace(workspace_id)` — workspace 内の全 table の column スキーマを 1 ツールで返却 (v0.4.0)
 
 LLM プロバイダーには一切依存しません。stdio で素の MCP プロトコルを話すだけです。
 
@@ -101,17 +102,20 @@ default_row_limit = 20000
 | ツール | 引数 | 戻り値 |
 |------|------|------|
 | `load_data` | `workspace_id`, `file_path` (ホスト), `table_name` | `{rows_loaded, schema}` |
-| `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached}` |
+| `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
 | `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
 | `list_workspaces` | — | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` |
-| `delete_workspace` | `workspace_id` | `{deleted, workspace_id}` |
+| `delete_workspace` | `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}` / `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
 | `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
 | `attach_files` | `workspace_id`, `paths: [string]` (1〜16、`/work/...` または相対) | MCP content 配列: summary text + 種別別 (image / text / metadata) ブロック |
 | `load_from_work` | `workspace_id`, `file_path` (`/work/...`), `table_name` | `{rows_loaded, schema}` |
+| `describe_workspace` | `workspace_id` | `{workspace_id, host_work_dir, container_state, tables: [{name, columns: [{name, type}]}]}` |
 
 `load_data` は拡張子で reader を選択（`.csv` → `read_csv_auto`、`.json` / `.jsonl` → `read_json_auto`、`.parquet` → `read_parquet`）。`query_data` は SQL に `LIMIT` がない場合 `LIMIT [query] default_row_limit`（既定 20000）を自動付加。`execute_code` は `language="python"` のみ受け付け（ADR-0003）、ランタイムコンテナには `duckdb` / `pandas` / `polars` / `pyarrow` / `matplotlib` / `Pillow` と `fonts-noto-cjk` (日本語ラベル描画用、ADR-0007) が同梱されています。セッション冒頭で `describe_runtime` を 1 回呼べば、利用可能なパッケージとフォントが分かります。
 
 `attach_files` (v0.3.0 / ADR-0008) はファイルを MCP image content (PNG / JPG / SVG / GIF / WEBP / BMP) または text content (CSV / JSON / MD 等) として返却するので MCP クライアントがインライン表示します。`[attach] max_single_size_bytes` (既定 10 MiB) または `max_total_size_bytes` (既定 20 MiB) を超過するファイルは metadata-only に降格。`load_from_work` (v0.3.0 / ADR-0009) は execute_code で生成された `/work` 内ファイルを `allowed_paths` を経由せず直接 DuckDB table 化します。
+
+`describe_workspace` (v0.4.0 / ADR-0010) は workspace 内の全 user table の column スキーマを 1 ツールで返却 — `list_workspaces` (workspace 一覧) と対称形でセッション跨ぎの「ここに何ある？」を即座に把握できます。`query_data` (v0.4.0) は `truncated` + `total` を返すようになり、テーブル不在エラーには「同 workspace の table 一覧 + 他 workspace 一覧」の hint が details に乗ります。`delete_workspace` の `dry_run: true` で削除予定情報のみを取得できます。
 
 ## セキュリティモデル（要点）
 
@@ -135,7 +139,8 @@ default_row_limit = 20000
 - [`docs/ja/reference/v0.2.0-plan.ja.md`](docs/ja/reference/v0.2.0-plan.ja.md) — v0.2.0 開発計画
 - [`docs/ja/reference/client-setup.ja.md`](docs/ja/reference/client-setup.ja.md) — Claude Desktop / Cursor 接続手順
 - [`docs/ja/reference/v0.3.0-plan.ja.md`](docs/ja/reference/v0.3.0-plan.ja.md) — v0.3.0 開発計画
-- [`docs/ja/adr/`](docs/ja/adr/) — workspace_id, Podman, Python 限定, stdio, ローカル build 配布, workspace 管理+describe_runtime, コンテナパッケージ拡張, attach_files, load_from_work の 9 件の ADR
+- [`docs/ja/reference/v0.4.0-plan.ja.md`](docs/ja/reference/v0.4.0-plan.ja.md) — v0.4.0 開発計画
+- [`docs/ja/adr/`](docs/ja/adr/) — ADR-0001〜0010 計 10 件: workspace_id, Podman, Python 限定, stdio, ローカル build 配布, workspace 管理+describe_runtime, コンテナパッケージ拡張, attach_files, load_from_work, v0.4.0 UX polish
 
 ## 謝辞
 

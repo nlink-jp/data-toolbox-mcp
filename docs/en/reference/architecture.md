@@ -3,7 +3,7 @@
 > Status: Draft (Phase 0)
 > Date: 2026-06-05
 
-This document describes the overall architecture of `data-toolbox-mcp`, building on ADR-0001 through ADR-0005 (Phase 0) plus ADR-0006 / ADR-0007 (added in v0.2.0). Details settled during implementation (library picks, function names, the final JSON Schema for tools) are out of scope here.
+This document describes the overall architecture of `data-toolbox-mcp`, building on ADR-0001 through ADR-0005 (Phase 0) plus ADR-0006 / ADR-0007 (added in v0.2.0), ADR-0008 / ADR-0009 (added in v0.3.0), and ADR-0010 (added in v0.4.0). Details settled during implementation (library picks, function names, the final JSON Schema for tools) are out of scope here.
 
 ## 0. Binary layout — single binary + subcommands
 
@@ -101,7 +101,9 @@ Guards:
 2. MCP server auto-appends LIMIT 20000 if no LIMIT is present (outer LIMIT wrap). The default is configurable via `[query] default_row_limit`
 3. MCP server `podman exec`s Python to run the SQL
 4. Python executes the SQL against DuckDB and returns a JSON array on stdout
-5. If row count reaches LIMIT, MCP server attaches a warning to the result
+5. If the row count hit the LIMIT, MCP server issues an additional `SELECT COUNT(*) FROM (user_sql) sub` to fetch the true total (v0.4.0 / ADR-0010).
+6. Returns {rows, row_count, limit_applied, limit_reached, truncated, total}. If not truncated, total = row_count; if truncated, total comes from the internal COUNT(). If the COUNT() itself times out, total is null and total_unavailable_reason is set.
+7. If the error mentions "Table ... does not exist" (CatalogException), MCP server augments the structured `script_failed` error's `details` with missing_table / available_tables_in_this_workspace / other_workspaces hints from SHOW TABLES + Manager.List() (v0.4.0).
 ```
 
 ### 3.3 execute_code(workspace_id, language, code)
@@ -135,20 +137,25 @@ No `Ensure` needed (disk + podman only). No side effects on containers.
 
 In v0.2.1 the per-item `host_work_dir` field was added (ADR-0006 amendment) so the LLM knows where `/work/foo.png` lands on the host without having to ask separately.
 
-### 3.5 delete_workspace(workspace_id) — v0.2.0 (ADR-0006)
+### 3.5 delete_workspace(workspace_id, dry_run?) — v0.2.0 + v0.4.0 (ADR-0006 + ADR-0010)
 
 ```
 1. MCP server validates workspace_id via workspace.ValidateID
 2. Defense-in-depth: re-verify via filepath.Clean that the computed
    <workspace_dir>/<id> is a direct child of <workspace_dir>
-3. podman.FindByName looks up the container
-4. If present, podman rm -f
-5. Remove from in-memory Manager.workspaces map
-6. os.RemoveAll(<workspace_dir>/<id>/) wipes the disk state
-7. Returns {deleted: true, workspace_id}
+3. dry_run = true (v0.4.0):
+   - podman.FindByName + ContainerState
+   - Compute host_paths and disk_usage_bytes (walked from the directory tree)
+   - Return {would_delete, container_id, container_state, host_paths, disk_usage_bytes} without deleting anything
+4. dry_run = false (default, existing behavior):
+   - podman.FindByName looks up the container
+   - If present, podman rm -f
+   - Remove from in-memory Manager.workspaces map
+   - os.RemoveAll(<workspace_dir>/<id>/) wipes the disk state
+   - Return {deleted: true, workspace_id}
 ```
 
-Irreversible. Relies on client-side user approval.
+dry_run = false is irreversible. Layered with the MCP client's user-approval gate, dry_run = true lets the LLM show "this is what would be deleted" first.
 
 ### 3.6 describe_runtime() — v0.2.0 (ADR-0006)
 
@@ -202,6 +209,17 @@ No Ensure (no Podman exec; host-side reads only). The use case is letting the LL
 Contrast with `load_data`: `load_data` is host → sandbox ingest (with `allowed_paths` check); `load_from_work` is sandbox → table (only under `/work`, no `allowed_paths` involvement).
 
 Implementation factors the reader-pick and script assembly into a shared helper with `load_data` for DRY.
+
+### 3.9 describe_workspace(workspace_id) — v0.4.0 (ADR-0010)
+
+```
+1. MCP server validates workspace_id and Ensures the workspace
+2. podman exec runs Python: SHOW TABLES + DESCRIBE per table
+3. Python emits {tables: [...]} as JSON
+4. Returns {workspace_id, host_work_dir, container_state, tables: [{name, columns: [{name, type}]}]}
+```
+
+Symmetric counterpart to `list_workspaces`: the latter lists the workspaces, this one lists the contents of one workspace. Row counts (`row_count`) are excluded in v0.4.0 — SELECT COUNT across all tables is heavy; revisit via a separate ADR if demand surfaces.
 
 ## 4. State model
 

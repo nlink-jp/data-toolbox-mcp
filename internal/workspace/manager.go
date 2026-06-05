@@ -209,6 +209,73 @@ func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
 	return infos, nil
 }
 
+// ContainerStateOf returns the workspace container's state ("running" /
+// "stopped" / "absent") without ensuring the workspace. Used by tools that
+// want to surface state without side-effects.
+func (m *Manager) ContainerStateOf(ctx context.Context, id string) (string, error) {
+	return m.podman.ContainerState(ctx, "data-toolbox-mcp-"+id)
+}
+
+// DeletePreview describes what would be removed by Delete, without doing
+// anything (ADR-0010 / v0.4.0). Returned by PreviewDelete.
+type DeletePreview struct {
+	WorkspaceID    string
+	ContainerID    string // empty when absent
+	ContainerState string // "running" / "stopped" / "absent"
+	HostBaseDir    string
+	HostWorkDir    string
+	HostDBPath     string
+	DiskUsageBytes int64
+}
+
+// PreviewDelete returns metadata describing what a Delete(id) call would
+// remove, without removing anything. Same defense-in-depth ID + path-traversal
+// checks as Delete, so it errors on bad input before doing any work.
+func (m *Manager) PreviewDelete(ctx context.Context, id string) (*DeletePreview, error) {
+	if err := ValidateID(id); err != nil {
+		return nil, err
+	}
+	baseDir := filepath.Join(m.cfg.Workspace.Dir, id)
+	cleaned := filepath.Clean(baseDir)
+	parentClean := filepath.Clean(m.cfg.Workspace.Dir)
+	if filepath.Dir(cleaned) != parentClean {
+		return nil, fmt.Errorf("refused: %s is not a direct child of %s", cleaned, parentClean)
+	}
+	preview := &DeletePreview{
+		WorkspaceID: id,
+		HostBaseDir: cleaned,
+		HostWorkDir: filepath.Join(cleaned, "work"),
+		HostDBPath:  filepath.Join(cleaned, "work", "analysis.duckdb"),
+	}
+	containerName := "data-toolbox-mcp-" + id
+	if cid, err := m.podman.FindByName(ctx, containerName); err == nil {
+		preview.ContainerID = cid
+	}
+	if state, err := m.podman.ContainerState(ctx, containerName); err == nil {
+		preview.ContainerState = state
+	} else {
+		preview.ContainerState = "absent"
+	}
+	preview.DiskUsageBytes = diskUsage(cleaned)
+	return preview, nil
+}
+
+// diskUsage returns the cumulative byte count of all regular files under root.
+// Missing root → 0 (not an error). Walk errors mid-way → best-effort partial.
+func diskUsage(root string) int64 {
+	var total int64
+	_ = filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
 // Delete tears down a workspace completely: the container (if any) is
 // force-removed and the on-disk state (analysis.duckdb, work/, _upload/,
 // _code/, ...) is wiped. Irreversible.
