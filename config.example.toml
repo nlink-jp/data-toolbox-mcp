@@ -1,0 +1,40 @@
+# data-toolbox-mcp configuration example
+#
+# See docs/{en,ja}/reference/architecture.md for the full meaning of each field.
+
+[server]
+log_level = "info"
+log_file  = "~/.data-toolbox/logs/server.log"
+
+[workspace]
+# Where per-workspace state lives on the host
+# (DuckDB files and the mirror of the container's /work directory).
+workspace_dir = "~/.data-toolbox"
+
+# Host directories that load_data may read from.
+# Symlinks inside these paths are resolved and re-checked at runtime.
+allowed_paths = [
+    "~/data",
+    "~/Downloads",
+]
+
+[container]
+# Built locally by `data-toolbox-mcp build-runtime` (ADR-0005).
+image = "localhost/data-toolbox-runtime:latest"
+
+# If true, the server stops every workspace container on exit.
+# If false, containers stay running and are reattached on next ensure.
+stop_on_exit = true
+
+[container.limits]
+cpu             = "1.0"
+memory          = "2GB"
+timeout_seconds = 60
+# network = "none" (default) blocks outbound traffic from the container.
+# Switching to "bridge" (or similar) lets LLM-generated code reach the network,
+# including `pip install` — see Phase 0 Q5-4 resolution.
+network = "none"
+
+[query]
+# Auto LIMIT applied to query_data when the SQL has no LIMIT clause.
+default_row_limit = 20000

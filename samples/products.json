@@ -1,0 +1,12 @@
+[
+  {"product_id":"P001","name":"Wireless Earbuds","category":"Electronics","cost":3500},
+  {"product_id":"P002","name":"Mechanical Keyboard","category":"Electronics","cost":8200},
+  {"product_id":"P003","name":"USB-C Hub","category":"Electronics","cost":2800},
+  {"product_id":"P004","name":"Programming Pearls","category":"Books","cost":2400},
+  {"product_id":"P005","name":"Design Patterns","category":"Books","cost":3800},
+  {"product_id":"P006","name":"Refactoring 2e","category":"Books","cost":4200},
+  {"product_id":"P007","name":"Hoodie","category":"Apparel","cost":4500},
+  {"product_id":"P008","name":"Cap","category":"Apparel","cost":1800},
+  {"product_id":"P009","name":"Tote Bag","category":"Apparel","cost":1200},
+  {"product_id":"P010","name":"Mouse Pad","category":"Accessories","cost":900}
+]
