@@ -152,6 +152,101 @@ func defaultUserns() string {
 	return "keep-id:uid=1000,gid=1000"
 }
 
+// WorkspaceInfo is the shape returned by Manager.List, designed to match the
+// `list_workspaces` MCP tool's contract (ADR-0006).
+type WorkspaceInfo struct {
+	ID             string    `json:"id"`
+	LastUsed       time.Time `json:"last_used"`
+	ContainerState string    `json:"container_state"` // "running" / "stopped" / "absent"
+}
+
+// List returns metadata for every workspace whose disk state is present under
+// workspace_dir. Truth source is disk (ADR-0006); the in-memory map is not
+// consulted so workspaces left over from previous server runs are also
+// discovered. An absent workspace_dir is not an error — an empty slice is
+// returned.
+func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
+	entries, err := os.ReadDir(m.cfg.Workspace.Dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []WorkspaceInfo{}, nil
+		}
+		return nil, fmt.Errorf("read workspace_dir: %w", err)
+	}
+	infos := make([]WorkspaceInfo, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		if err := ValidateID(id); err != nil {
+			// Skip non-workspace directories (hidden files, stray dirs, etc.).
+			continue
+		}
+		info := WorkspaceInfo{ID: id}
+		// last_used: prefer the DuckDB file mtime; fall back to the directory mtime.
+		dbPath := filepath.Join(m.cfg.Workspace.Dir, id, "work", "analysis.duckdb")
+		if st, err := os.Stat(dbPath); err == nil {
+			info.LastUsed = st.ModTime()
+		} else if fi, err := e.Info(); err == nil {
+			info.LastUsed = fi.ModTime()
+		}
+		// container_state: ask podman; "absent" is the safe default on error.
+		if state, err := m.podman.ContainerState(ctx, "data-toolbox-mcp-"+id); err == nil {
+			info.ContainerState = state
+		} else {
+			info.ContainerState = "absent"
+		}
+		infos = append(infos, info)
+	}
+	return infos, nil
+}
+
+// Delete tears down a workspace completely: the container (if any) is
+// force-removed and the on-disk state (analysis.duckdb, work/, _upload/,
+// _code/, ...) is wiped. Irreversible.
+//
+// Defense-in-depth: even though ValidateID restricts the id syntax, we
+// recompute the cleaned absolute path and verify it is a direct child of
+// workspace_dir before calling os.RemoveAll, to make path-traversal bugs
+// reachable only by lying about workspace_dir itself.
+func (m *Manager) Delete(ctx context.Context, id string) error {
+	if err := ValidateID(id); err != nil {
+		return err
+	}
+
+	baseDir := filepath.Join(m.cfg.Workspace.Dir, id)
+	cleaned := filepath.Clean(baseDir)
+	parentClean := filepath.Clean(m.cfg.Workspace.Dir)
+	if filepath.Dir(cleaned) != parentClean {
+		return fmt.Errorf("refused to delete: %s is not a direct child of %s", cleaned, parentClean)
+	}
+
+	// Remove the container if it exists. Use FindByName so an absent
+	// container is not an error.
+	name := "data-toolbox-mcp-" + id
+	containerID, err := m.podman.FindByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	if containerID != "" {
+		if err := m.podman.Remove(ctx, containerID); err != nil {
+			return fmt.Errorf("remove container: %w", err)
+		}
+	}
+
+	// Drop from the in-memory map.
+	m.mu.Lock()
+	delete(m.workspaces, id)
+	m.mu.Unlock()
+
+	// Wipe disk state.
+	if err := os.RemoveAll(cleaned); err != nil {
+		return fmt.Errorf("remove disk state: %w", err)
+	}
+	return nil
+}
+
 // Cleanup stops every tracked workspace. Intended for graceful shutdown.
 // Returns the first error encountered but always attempts every workspace.
 func (m *Manager) Cleanup(ctx context.Context) error {

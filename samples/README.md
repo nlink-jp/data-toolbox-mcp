@@ -79,7 +79,27 @@ Claude Desktop を再起動して設定を反映。
 
 > 言語を bash にして `echo hi` を実行して。
 
-期待動作: `unsupported_language` 構造化エラー、`{"code":"unsupported_language", ...}`。
+期待動作: `unsupported_language` 構造化エラー、`{"code":"unsupported_language", ...}` (注: Claude Desktop は inputSchema.enum をクライアント側で先に弾くため、実際には `invalid_enum_value` が返ることもある)。
+
+### Stage 8: workspace 管理 (v0.2.0 / ADR-0006)
+
+> data-toolbox の `list_workspaces` を呼んで、今どんな workspace が残っているか教えて。
+
+期待動作: `{workspaces: [{id, last_used, container_state}]}` 形式で複数 workspace が並ぶ。`container_state` は `running` / `stopped` / `absent` の 3 値。
+
+> `samples` workspace を消して、もう一度 `list_workspaces` を呼んで本当に消えたか確認して。
+
+期待動作: `delete_workspace(workspace_id="samples")` で `{deleted: true}` が返る → 再度 `list_workspaces` で `samples` が消えている。
+
+### Stage 9: ランタイム機能の発見 + 日本語プロット (v0.2.0 / ADR-0006 + ADR-0007)
+
+> `describe_runtime` を呼んで、コンテナで何が使えるか教えて。
+
+期待動作: `{python_version: "3.12", packages: [...6 packages...], fonts: ["Noto Sans CJK JP"], network: "none", ...}` が返る。LLM はこれを見て matplotlib / Pillow / pandas / polars が使えること、日本語フォントが入っていることを把握する。
+
+> 月別の売上を棒グラフで描いて、タイトルに「月別売上 2026Q2」を入れて。`/work/sales.png` に保存して。
+
+期待動作: `execute_code` で matplotlib を使った日本語タイトル付きのグラフが生成される。UserWarning なしで描画されるのが ADR-0007 の matplotlibrc 設定 (Noto Sans CJK JP 先頭) の効果。
 
 ## サンプルデータの解析でわかること
 

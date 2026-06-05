@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-05
+
+Workspace management, runtime introspection, and plotting support.
+
+### Added
+
+- **ADR-0006**: three new MCP tools (`list_workspaces`, `delete_workspace`, `describe_runtime`).
+  - `list_workspaces`: lists every workspace with on-disk state and its current `container_state` (`running` / `stopped` / `absent`). LLM clients can recover state across chat sessions and pick up where they left off.
+  - `delete_workspace`: stops the container (if any) and wipes a workspace's on-disk state. Irreversible. Defense-in-depth: validates the id syntax and re-verifies the computed path is a direct child of `workspace_dir`.
+  - `describe_runtime`: returns the static manifest of the runtime container (python version, pip packages, fonts, mount points, notes) merged with the live `network` setting from config. Intended to be called once at session start so the LLM knows what it can `import` and whether the network is reachable.
+- **ADR-0007**: runtime container expanded to support plotting.
+  - Switched base image to `python:3.12-slim` (proven stable in shell-agent-v2).
+  - Added `fonts-noto-cjk` and `ca-certificates` via apt.
+  - Added `matplotlib~=3.10` and `Pillow~=11.0` via pip.
+  - Shipped `/etc/matplotlib/matplotlibrc` with `font.sans-serif: Noto Sans CJK JP, DejaVu Sans, Arial, Liberation Sans` (CJK first — matplotlib's Agg backend doesn't do per-glyph fallback, so the CJK font must be first to render Japanese without `UserWarning`).
+  - `MATPLOTLIBRC` env var pinned in the container.
+- `internal/runtime/manifest.go`: the static manifest backing `describe_runtime`. Maintained in lock-step with `runtime/Dockerfile` (same-commit discipline).
+- `internal/workspace.WorkspaceInfo` + `Manager.List` + `Manager.Delete` + `PodmanClient.ContainerState`.
+- E2E tests: `TestE2E_v020_WorkspaceLifecycle`, `TestE2E_v020_JapaneseMatplotlib`, `TestE2E_v020_ManifestDrift` (`describe_runtime` vs `pip list` inside the actually-built container).
+- `samples/README.md`: Stage 8 (list/delete) and Stage 9 (describe_runtime + Japanese plot) verification prompts.
+
+### Changed
+
+- Runtime container image size grew from 692MB to 882MB (under the 900MB budget set in ADR-0007).
+- Tool surface: 3 → 6 (`load_data` / `query_data` / `execute_code` / `list_workspaces` / `delete_workspace` / `describe_runtime`).
+- `cmd/build_runtime_test.go` now asserts presence of `python:3.12-slim`, `matplotlib`, `Pillow`, `fonts-noto-cjk`, `ca-certificates`, `Noto Sans CJK JP`, and `MATPLOTLIBRC` in the embedded Dockerfile.
+
+### Notes
+
+- Real-machine verification on 2026-06-05 confirmed Japanese labels render via `execute_code` under `network=none` with `-W error::UserWarning` (strictest check).
+- Out of scope for v0.2.0 (deferred to later ADRs): scipy, scikit-learn, seaborn, plotly, graphviz, openpyxl, fonts-noto-cjk-extra, TTL-based workspace GC.
+
 ## [0.1.0] - 2026-06-05
 
 Initial public release.

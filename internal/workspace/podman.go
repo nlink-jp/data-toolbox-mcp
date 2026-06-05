@@ -130,6 +130,30 @@ func (c *PodmanClient) Exec(ctx context.Context, opts ExecOpts) (*ExecResult, er
 	return &ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, nil
 }
 
+// ContainerState reports whether the container named `name` is running,
+// stopped (exited / created / paused), or absent. Used by list_workspaces
+// (ADR-0006) to surface workspace state to the LLM without an Ensure.
+func (c *PodmanClient) ContainerState(ctx context.Context, name string) (string, error) {
+	stdout, stderr, code, err := c.runner.Run(ctx, c.binary,
+		"ps", "-a", "--filter", "name="+name, "--format", "{{.State}}")
+	if err != nil && code == -1 {
+		return "", fmt.Errorf("podman ps: %w", err)
+	}
+	if code != 0 {
+		return "", fmt.Errorf("podman ps (exit %d): %s", code, string(stderr))
+	}
+	state := strings.TrimSpace(string(stdout))
+	switch state {
+	case "":
+		return "absent", nil
+	case "running":
+		return "running", nil
+	default:
+		// exited, created, paused, configured — all "not running".
+		return "stopped", nil
+	}
+}
+
 // FindByName returns the container ID for the given name, or "" if no
 // container with that name exists.
 func (c *PodmanClient) FindByName(ctx context.Context, name string) (string, error) {

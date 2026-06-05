@@ -3,7 +3,7 @@
 > Status: Draft (Phase 0)
 > Date: 2026-06-05
 
-This document describes the overall architecture of `data-toolbox-mcp`, building on ADR-0001 through ADR-0005 that were locked in Phase 0. It is for review before Phase 1 implementation; details that will be settled during implementation (library picks, function names, the final JSON Schema for tools) are out of scope here.
+This document describes the overall architecture of `data-toolbox-mcp`, building on ADR-0001 through ADR-0005 (Phase 0) plus ADR-0006 / ADR-0007 (added in v0.2.0). Details settled during implementation (library picks, function names, the final JSON Schema for tools) are out of scope here.
 
 ## 0. Binary layout — single binary + subcommands
 
@@ -115,6 +115,49 @@ Guards:
 6. If finished within the timeout, return; else kill the container
 7. Temp code files are retained (for debugging, with TTL cleanup planned in Phase 2)
 ```
+
+### 3.4 list_workspaces() — v0.2.0 (ADR-0006)
+
+```
+1. MCP server walks workspace_dir via os.ReadDir
+2. Each entry is passed through workspace.ValidateID; non-workspace entries are skipped
+3. For each candidate:
+   - last_used: mtime of <workspace_dir>/<id>/work/analysis.duckdb
+                (falls back to the directory mtime if the DB file is absent)
+   - container_state: `podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}`
+                      normalized to "running" / "stopped" / "absent"
+4. Returns {workspaces: [{id, last_used, container_state}]}
+```
+
+No `Ensure` needed (disk + podman only). No side effects on containers.
+
+### 3.5 delete_workspace(workspace_id) — v0.2.0 (ADR-0006)
+
+```
+1. MCP server validates workspace_id via workspace.ValidateID
+2. Defense-in-depth: re-verify via filepath.Clean that the computed
+   <workspace_dir>/<id> is a direct child of <workspace_dir>
+3. podman.FindByName looks up the container
+4. If present, podman rm -f
+5. Remove from in-memory Manager.workspaces map
+6. os.RemoveAll(<workspace_dir>/<id>/) wipes the disk state
+7. Returns {deleted: true, workspace_id}
+```
+
+Irreversible. Relies on client-side user approval.
+
+### 3.6 describe_runtime() — v0.2.0 (ADR-0006)
+
+```
+1. MCP server reads static constants from internal/runtime/manifest.go
+   (python_version / packages / fonts / mount_points / notes)
+2. Reads config.Container.Limits.Network at request time and composes
+3. Returns {python_version, container_image, packages, fonts, network, mount_points, notes}
+```
+
+No `Ensure`, no Podman call — pure static data + one config read. Intended to be called once by the LLM at session start.
+
+**Manifest truth**: when the Dockerfile changes, `internal/runtime/manifest.go` is updated in the same commit (same discipline as ADR-0005's `go:embed` sync responsibility). Drift is caught by an e2e test that compares the manifest against `pip list` inside the actual container.
 
 ## 4. State model
 

@@ -57,4 +57,45 @@ func Register(srv *mcpserver.Server, mgr *workspace.Manager, cfg *config.Config)
 	}, func(ctx context.Context, args json.RawMessage) (any, error) {
 		return ExecuteCode(ctx, mgr, cfg, args)
 	})
+
+	// --- v0.2.0 tools (ADR-0006) ---
+
+	srv.RegisterTool(mcpserver.Tool{
+		Name:        "list_workspaces",
+		Description: "List every workspace that has on-disk state (id, last_used, container_state). Use this to discover prior workspaces across chat sessions.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {},
+			"additionalProperties": false
+		}`),
+	}, func(ctx context.Context, args json.RawMessage) (any, error) {
+		return ListWorkspaces(ctx, mgr, cfg, args)
+	})
+
+	srv.RegisterTool(mcpserver.Tool{
+		Name:        "delete_workspace",
+		Description: "Stop the container (if any) and wipe a workspace's on-disk state completely. IRREVERSIBLE.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"workspace_id": {"type":"string","description":"Workspace key to delete. Must match ^[a-zA-Z0-9_-]{1,64}$."}
+			},
+			"required": ["workspace_id"],
+			"additionalProperties": false
+		}`),
+	}, func(ctx context.Context, args json.RawMessage) (any, error) {
+		return DeleteWorkspace(ctx, mgr, cfg, args)
+	})
+
+	srv.RegisterTool(mcpserver.Tool{
+		Name:        "describe_runtime",
+		Description: "Return what the container runtime ships: python version, pip packages, fonts, network setting, mount points, and notes. Call once at session start to learn capabilities without trial-and-error.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {},
+			"additionalProperties": false
+		}`),
+	}, func(ctx context.Context, args json.RawMessage) (any, error) {
+		return DescribeRuntime(ctx, mgr, cfg, args)
+	})
 }

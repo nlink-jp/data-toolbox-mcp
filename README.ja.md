@@ -2,11 +2,14 @@
 
 > DuckDB データ分析 + コンテナ化 Python 実行を単一バイナリの MCP サーバーとして提供。LLM クライアントは持ち込みで。
 
-`data-toolbox-mcp` は任意の MCP クライアント（Claude Desktop, Cursor 等）が、workspace 単位の DuckDB にデータをロードし、SQL や Python を Podman サンドボックス内で実行できるようにする MCP サーバーです。公開するツールは 3 つ:
+`data-toolbox-mcp` は任意の MCP クライアント（Claude Desktop, Cursor 等）が、workspace 単位の DuckDB にデータをロードし、SQL や Python を Podman サンドボックス内で実行できるようにする MCP サーバーです。公開するツールは 6 つ:
 
 - `load_data(workspace_id, file_path, table_name)`
 - `query_data(workspace_id, sql)`
 - `execute_code(workspace_id, language, code)`
+- `list_workspaces()` — セッションを跨いで過去の workspace を発見
+- `delete_workspace(workspace_id)` — workspace を完全に削除
+- `describe_runtime()` — コンテナの同梱機能 (python / パッケージ / フォント / network) を開示
 
 LLM プロバイダーには一切依存しません。stdio で素の MCP プロトコルを話すだけです。
 
@@ -98,8 +101,11 @@ default_row_limit = 20000
 | `load_data` | `workspace_id`, `file_path`, `table_name` | `{rows_loaded, schema}` |
 | `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached}` |
 | `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code}` |
+| `list_workspaces` | — | `{workspaces: [{id, last_used, container_state}]}` |
+| `delete_workspace` | `workspace_id` | `{deleted, workspace_id}` |
+| `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
 
-`load_data` は拡張子で reader を選択（`.csv` → `read_csv_auto`、`.json` / `.jsonl` → `read_json_auto`、`.parquet` → `read_parquet`）。`query_data` は SQL に `LIMIT` がない場合 `LIMIT [query] default_row_limit`（既定 20000）を自動付加。`execute_code` は `language="python"` のみ受け付け（ADR-0003）、ランタイムコンテナには `duckdb` / `pandas` / `polars` / `pyarrow` が同梱されています。
+`load_data` は拡張子で reader を選択（`.csv` → `read_csv_auto`、`.json` / `.jsonl` → `read_json_auto`、`.parquet` → `read_parquet`）。`query_data` は SQL に `LIMIT` がない場合 `LIMIT [query] default_row_limit`（既定 20000）を自動付加。`execute_code` は `language="python"` のみ受け付け（ADR-0003）、ランタイムコンテナには `duckdb` / `pandas` / `polars` / `pyarrow` / `matplotlib` / `Pillow` と `fonts-noto-cjk` (日本語ラベル描画用、ADR-0007) が同梱されています。セッション冒頭で `describe_runtime` を 1 回呼べば、利用可能なパッケージとフォントが分かります。
 
 ## セキュリティモデル（要点）
 
@@ -119,9 +125,10 @@ default_row_limit = 20000
 
 - [`docs/ja/data-toolbox-mcp-rfp.ja.md`](docs/ja/data-toolbox-mcp-rfp.ja.md) — RFP
 - [`docs/ja/reference/architecture.ja.md`](docs/ja/reference/architecture.ja.md) — アーキテクチャ
-- [`docs/ja/reference/phase1-plan.ja.md`](docs/ja/reference/phase1-plan.ja.md) — Phase 1 開発計画
+- [`docs/ja/reference/phase1-plan.ja.md`](docs/ja/reference/phase1-plan.ja.md) — Phase 1 (v0.1.0) 開発計画
+- [`docs/ja/reference/v0.2.0-plan.ja.md`](docs/ja/reference/v0.2.0-plan.ja.md) — v0.2.0 開発計画
 - [`docs/ja/reference/client-setup.ja.md`](docs/ja/reference/client-setup.ja.md) — Claude Desktop / Cursor 接続手順
-- [`docs/ja/adr/`](docs/ja/adr/) — workspace_id, Podman, Python 限定, stdio, ローカル build 配布 の 5 件の ADR
+- [`docs/ja/adr/`](docs/ja/adr/) — workspace_id, Podman, Python 限定, stdio, ローカル build 配布, workspace 管理+describe_runtime, コンテナパッケージ拡張 の 7 件の ADR
 
 ## 謝辞
 

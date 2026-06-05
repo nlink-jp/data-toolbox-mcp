@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -178,5 +180,150 @@ func TestReleaseStopsAndRemoves(t *testing.T) {
 	}
 	if !sawRm {
 		t.Errorf("Release did not issue podman rm")
+	}
+}
+
+// --- v0.2.0 tests (ADR-0006: list_workspaces / delete_workspace) ---
+
+func TestListEmptyWhenDirAbsent(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace.Dir = filepath.Join(t.TempDir(), "never-created")
+	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
+
+	infos, err := m.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected 0 workspaces for absent dir, got %d", len(infos))
+	}
+}
+
+func TestListReturnsExistingWorkspaces(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace.Dir = t.TempDir()
+
+	// Seed three workspace dirs and a stray non-workspace entry.
+	for _, id := range []string{"alpha", "beta", "gamma"} {
+		if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, id, "work"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Stray: invalid name → must be skipped.
+	if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, "..stray"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &fakeRunner{}
+	fr.respond = func(args []string) ([]byte, []byte, int, error) {
+		if args[0] == "ps" {
+			// One running, one stopped, one absent — keyed by --filter name=.
+			for i, a := range args {
+				if a == "name=data-toolbox-mcp-alpha" {
+					_ = i
+					return []byte("running\n"), nil, 0, nil
+				}
+				if a == "name=data-toolbox-mcp-beta" {
+					return []byte("exited\n"), nil, 0, nil
+				}
+				if a == "name=data-toolbox-mcp-gamma" {
+					return []byte(""), nil, 0, nil
+				}
+			}
+		}
+		return nil, nil, 0, nil
+	}
+	m := NewManager(cfg, newFakeClient(fr))
+	infos, err := m.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(infos) != 3 {
+		t.Fatalf("expected 3 workspaces, got %d: %+v", len(infos), infos)
+	}
+
+	got := map[string]string{}
+	for _, i := range infos {
+		got[i.ID] = i.ContainerState
+	}
+	for id, want := range map[string]string{"alpha": "running", "beta": "stopped", "gamma": "absent"} {
+		if got[id] != want {
+			t.Errorf("workspace %q container_state = %q, want %q", id, got[id], want)
+		}
+	}
+}
+
+func TestDeleteRemovesContainerAndDisk(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace.Dir = t.TempDir()
+	target := filepath.Join(cfg.Workspace.Dir, "doomed")
+	if err := os.MkdirAll(filepath.Join(target, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "work", "analysis.duckdb"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &fakeRunner{}
+	fr.respond = func(args []string) ([]byte, []byte, int, error) {
+		if args[0] == "ps" {
+			return []byte("cid-doomed\n"), nil, 0, nil
+		}
+		return nil, nil, 0, nil
+	}
+	m := NewManager(cfg, newFakeClient(fr))
+
+	if err := m.Delete(context.Background(), "doomed"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("disk state still present after Delete: %v", err)
+	}
+	sawRm := false
+	for _, c := range fr.calls {
+		if len(c) >= 2 && c[1] == "rm" {
+			sawRm = true
+		}
+	}
+	if !sawRm {
+		t.Errorf("Delete did not issue podman rm")
+	}
+}
+
+func TestDeleteIsIdempotentForAbsentContainer(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace.Dir = t.TempDir()
+	target := filepath.Join(cfg.Workspace.Dir, "lonely")
+	if err := os.MkdirAll(filepath.Join(target, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &fakeRunner{}
+	fr.respond = func(args []string) ([]byte, []byte, int, error) {
+		if args[0] == "ps" {
+			return []byte(""), nil, 0, nil // no container
+		}
+		if args[0] == "rm" {
+			t.Errorf("Delete should not issue podman rm when no container exists")
+		}
+		return nil, nil, 0, nil
+	}
+	m := NewManager(cfg, newFakeClient(fr))
+	if err := m.Delete(context.Background(), "lonely"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("disk state still present after Delete (no container case)")
+	}
+}
+
+func TestDeleteRejectsInvalidID(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace.Dir = t.TempDir()
+	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
+
+	err := m.Delete(context.Background(), "../escape")
+	if err == nil || !strings.Contains(err.Error(), "invalid workspace_id") {
+		t.Errorf("expected invalid workspace_id error, got: %v", err)
 	}
 }

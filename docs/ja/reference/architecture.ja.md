@@ -3,7 +3,7 @@
 > Status: Draft (Phase 0)
 > Date: 2026-06-05
 
-本書は `data-toolbox-mcp` の全体設計を、Phase 0 で確定した ADR-0001〜0005 を前提に記述する。Phase 1 着手前のレビュー対象であり、実装後に Phase 1 で確定する細部（ライブラリ選定・関数名・JSON Schema の確定形）は対象外。
+本書は `data-toolbox-mcp` の全体設計を、Phase 0 で確定した ADR-0001〜0005 + v0.2.0 で追加した ADR-0006 / ADR-0007 を前提に記述する。実装後の細部（ライブラリ選定・関数名・JSON Schema の確定形）は対象外。
 
 ## 0. Binary layout — 単一バイナリ + サブコマンド
 
@@ -115,6 +115,49 @@
 6. MCP server: timeout 内に終了したら結果を返却、超過したらコンテナに kill シグナル
 7. MCP server: 一時 code ファイルは保持（デバッグ用、Phase 2 で TTL 削除）
 ```
+
+### 3.4 list_workspaces() — v0.2.0 (ADR-0006)
+
+```
+1. MCP server: workspace_dir を os.ReadDir で走査
+2. 各エントリを workspace.ValidateID にかけて workspace 候補のみ抽出
+3. 各候補について:
+   - last_used: <workspace_dir>/<id>/work/analysis.duckdb の mtime
+                (なければディレクトリ自体の mtime)
+   - container_state: podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}
+                      → "running" / "stopped" / "absent" に正規化
+4. {workspaces: [{id, last_used, container_state}]} を返却
+```
+
+`Ensure` 不要 (ディスクと podman を直接見るだけ)。コンテナは触らないので副作用なし。
+
+### 3.5 delete_workspace(workspace_id) — v0.2.0 (ADR-0006)
+
+```
+1. MCP server: workspace.ValidateID で workspace_id 検証
+2. 計算した <workspace_dir>/<id> が <workspace_dir> の直接の子であることを
+   filepath.Clean で再検証 (path traversal 二重防御)
+3. podman.FindByName でコンテナを検索
+4. コンテナが存在すれば podman rm -f で除去
+5. in-memory Manager.workspaces map から削除
+6. os.RemoveAll(<workspace_dir>/<id>/) でディスク状態を完全削除
+7. {deleted: true, workspace_id} を返却
+```
+
+不可逆。MCP クライアント側のユーザー承認に依存。
+
+### 3.6 describe_runtime() — v0.2.0 (ADR-0006)
+
+```
+1. MCP server: internal/runtime/manifest.go の静的定数を読む
+   (python_version / packages / fonts / mount_points / notes)
+2. config.Container.Limits.Network を実行時に取得して合成
+3. {python_version, container_image, packages, fonts, network, mount_points, notes} を返却
+```
+
+`Ensure` 不要、Podman 呼び出しも不要 (純粋な静的データ + config 1 個参照)。LLM がセッション冒頭で 1 回呼ぶ用途を想定。
+
+**manifest の真実性**: Dockerfile を変更するときは同コミットで `internal/runtime/manifest.go` も更新する規律 (ADR-0005 の go:embed 同期と同じ責務範囲)。drift 検証は e2e テストで `pip list` 結果と突き合わせる。
 
 ## 4. State model
 

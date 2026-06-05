@@ -2,11 +2,14 @@
 
 > DuckDB analysis and containerized Python execution, exposed as a single-binary MCP server. Bring your own LLM client.
 
-`data-toolbox-mcp` lets any MCP client (Claude Desktop, Cursor, ...) load tabular data into a per-workspace DuckDB and run SQL or Python against it inside a Podman sandbox. Three tools are exposed:
+`data-toolbox-mcp` lets any MCP client (Claude Desktop, Cursor, ...) load tabular data into a per-workspace DuckDB and run SQL or Python against it inside a Podman sandbox. Six tools are exposed:
 
 - `load_data(workspace_id, file_path, table_name)`
 - `query_data(workspace_id, sql)`
 - `execute_code(workspace_id, language, code)`
+- `list_workspaces()` — discover prior workspaces across sessions
+- `delete_workspace(workspace_id)` — tear a workspace down completely
+- `describe_runtime()` — what the container ships (python, packages, fonts, network)
 
 The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to any LLM provider itself.
 
@@ -98,8 +101,11 @@ See [`config.example.toml`](config.example.toml) for the full schema. Full clien
 | `load_data` | `workspace_id`, `file_path`, `table_name` | `{rows_loaded, schema}` |
 | `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached}` |
 | `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code}` |
+| `list_workspaces` | — | `{workspaces: [{id, last_used, container_state}]}` |
+| `delete_workspace` | `workspace_id` | `{deleted, workspace_id}` |
+| `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
 
-`load_data` infers the reader from the file extension (`.csv` → `read_csv_auto`, `.json` / `.jsonl` → `read_json_auto`, `.parquet` → `read_parquet`). `query_data` auto-appends `LIMIT [query] default_row_limit` (default 20000) when the SQL has no `LIMIT`. `execute_code` only accepts `language="python"` in this version (see ADR-0003); the runtime container ships with `duckdb`, `pandas`, `polars`, and `pyarrow`.
+`load_data` infers the reader from the file extension (`.csv` → `read_csv_auto`, `.json` / `.jsonl` → `read_json_auto`, `.parquet` → `read_parquet`). `query_data` auto-appends `LIMIT [query] default_row_limit` (default 20000) when the SQL has no `LIMIT`. `execute_code` only accepts `language="python"` in this version (ADR-0003); the runtime container ships with `duckdb`, `pandas`, `polars`, `pyarrow`, `matplotlib`, and `Pillow`, plus `fonts-noto-cjk` so Japanese matplotlib labels render without setup (ADR-0007). Call `describe_runtime` once at session start to inspect what's actually available.
 
 ## Security model (essentials)
 
@@ -119,9 +125,10 @@ Full model: [`docs/en/reference/architecture.md`](docs/en/reference/architecture
 
 - [`docs/en/data-toolbox-mcp-rfp.md`](docs/en/data-toolbox-mcp-rfp.md) — the original RFP
 - [`docs/en/reference/architecture.md`](docs/en/reference/architecture.md) — overall architecture
-- [`docs/en/reference/phase1-plan.md`](docs/en/reference/phase1-plan.md) — Phase 1 development plan
+- [`docs/en/reference/phase1-plan.md`](docs/en/reference/phase1-plan.md) — Phase 1 (v0.1.0) development plan
+- [`docs/en/reference/v0.2.0-plan.md`](docs/en/reference/v0.2.0-plan.md) — v0.2.0 development plan
 - [`docs/en/reference/client-setup.md`](docs/en/reference/client-setup.md) — Claude Desktop / Cursor setup
-- [`docs/en/adr/`](docs/en/adr/) — five ADRs covering workspace_id, Podman, Python-only, stdio, and local-build distribution
+- [`docs/en/adr/`](docs/en/adr/) — seven ADRs covering workspace_id, Podman, Python-only, stdio, local-build distribution, workspace mgmt + describe_runtime, and container package scope
 
 ## Acknowledgements
 
