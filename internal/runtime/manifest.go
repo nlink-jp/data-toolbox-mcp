@@ -45,11 +45,12 @@ var Default = Manifest{
 		"Noto Sans CJK JP",
 	},
 	MountPoints: map[string]string{
-		"/work": "host workspace work directory; container can read and write here",
+		"/work": "container directory bind-mounted to the host; files here appear on the host (see notes for the artifact-exchange pattern)",
 	},
 	Notes: []string{
 		"matplotlibrc preconfigured with Noto Sans CJK JP as the first font.sans-serif entry; Japanese labels render without extra setup.",
 		"DuckDB file lives at /work/analysis.duckdb inside the container.",
 		"Container runs as uid 1000 (toolbox); host bind-mounts are mapped via --userns keep-id:uid=1000,gid=1000.",
+		"ARTIFACT EXCHANGE: anything you write to /work/<name> inside the container appears on the host at <workspace_dir>/<workspace_id>/work/<name>. The exact host path for the workspace you are using is returned as host_work_dir in the execute_code result and in each list_workspaces item. Use this to hand files back to the user (PNG plots, exported CSV / Parquet, generated reports — anything). Do NOT base64-encode and embed in the response: it wastes the response budget and the user can open the file directly.",
 	},
 }

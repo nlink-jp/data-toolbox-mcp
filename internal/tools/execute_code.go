@@ -19,10 +19,14 @@ type executeCodeArgs struct {
 }
 
 // ExecuteCodeResult is the structured return of execute_code.
+//
+// HostWorkDir was added in v0.2.1 (ADR-0006 amendment) so the LLM can tell
+// the user where artifacts written to /work/<name> actually land on the host.
 type ExecuteCodeResult struct {
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exit_code"`
+	Stdout      string `json:"stdout"`
+	Stderr      string `json:"stderr"`
+	ExitCode    int    `json:"exit_code"`
+	HostWorkDir string `json:"host_work_dir"`
 }
 
 // ExecuteCode implements the execute_code MCP tool.
@@ -65,8 +69,9 @@ func ExecuteCode(ctx context.Context, mgr *workspace.Manager, cfg *config.Config
 		return nil, toolerr.Newf(toolerr.CodeContainerFailed, "podman exec: %v", err)
 	}
 	return ExecuteCodeResult{
-		Stdout:   string(res.Stdout),
-		Stderr:   string(res.Stderr),
-		ExitCode: res.ExitCode,
+		Stdout:      string(res.Stdout),
+		Stderr:      string(res.Stderr),
+		ExitCode:    res.ExitCode,
+		HostWorkDir: w.HostWorkDir,
 	}, nil
 }

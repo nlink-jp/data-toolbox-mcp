@@ -158,6 +158,10 @@ type WorkspaceInfo struct {
 	ID             string    `json:"id"`
 	LastUsed       time.Time `json:"last_used"`
 	ContainerState string    `json:"container_state"` // "running" / "stopped" / "absent"
+	// HostWorkDir is the absolute host path of the workspace's /work mount
+	// (added in v0.2.1 per ADR-0006 amendment). Lets the LLM tell the user
+	// where artifacts written to /work/<name> actually land on disk.
+	HostWorkDir string `json:"host_work_dir"`
 }
 
 // List returns metadata for every workspace whose disk state is present under
@@ -183,7 +187,10 @@ func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
 			// Skip non-workspace directories (hidden files, stray dirs, etc.).
 			continue
 		}
-		info := WorkspaceInfo{ID: id}
+		info := WorkspaceInfo{
+			ID:          id,
+			HostWorkDir: filepath.Join(m.cfg.Workspace.Dir, id, "work"),
+		}
 		// last_used: prefer the DuckDB file mtime; fall back to the directory mtime.
 		dbPath := filepath.Join(m.cfg.Workspace.Dir, id, "work", "analysis.duckdb")
 		if st, err := os.Stat(dbPath); err == nil {

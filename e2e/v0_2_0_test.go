@@ -63,7 +63,7 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 	if err != nil || isErr {
 		t.Fatalf("describe_runtime: err=%v isErr=%v body=%s", err, isErr, descBody)
 	}
-	for _, want := range []string{`"python_version":"3.12"`, `"duckdb"`, `"matplotlib"`, `"Noto Sans CJK JP"`, `"network":"none"`} {
+	for _, want := range []string{`"python_version":"3.12"`, `"duckdb"`, `"matplotlib"`, `"Noto Sans CJK JP"`, `"network":"none"`, `ARTIFACT EXCHANGE`} {
 		if !strings.Contains(string(descBody), want) {
 			t.Errorf("describe_runtime missing %q in %s", want, descBody)
 		}
@@ -88,6 +88,7 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 	}
 
 	// 5) list_workspaces (after load) — must contain our test id with running container
+	//    AND its host_work_dir for the workspace (v0.2.1 amendment).
 	afterBody, _, err := h.CallTool("list_workspaces", map[string]any{}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("list_workspaces (after): %v", err)
@@ -95,6 +96,24 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 	if !strings.Contains(string(afterBody), `"id":"e2e-v020"`) ||
 		!strings.Contains(string(afterBody), `"container_state":"running"`) {
 		t.Errorf("workspace not surfaced as running after load: %s", afterBody)
+	}
+	if !strings.Contains(string(afterBody), `"host_work_dir":"`) ||
+		!strings.Contains(string(afterBody), `e2e-v020/work`) {
+		t.Errorf("list_workspaces missing host_work_dir for e2e-v020: %s", afterBody)
+	}
+
+	// 5b) execute_code — must return host_work_dir for the workspace (v0.2.1 amendment).
+	execBody, isErr, err := h.CallTool("execute_code", map[string]any{
+		"workspace_id": "e2e-v020",
+		"language":     "python",
+		"code":         "print('hello')\n",
+	}, 30*time.Second)
+	if err != nil || isErr {
+		t.Fatalf("execute_code probe: err=%v isErr=%v body=%s", err, isErr, execBody)
+	}
+	if !strings.Contains(string(execBody), `"host_work_dir":"`) ||
+		!strings.Contains(string(execBody), `e2e-v020/work`) {
+		t.Errorf("execute_code result missing host_work_dir: %s", execBody)
 	}
 
 	// 6) delete_workspace

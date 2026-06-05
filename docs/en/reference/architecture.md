@@ -114,6 +114,7 @@ Guards:
 5. Python runs the code, returns stdout/stderr/exit_code
 6. If finished within the timeout, return; else kill the container
 7. Temp code files are retained (for debugging, with TTL cleanup planned in Phase 2)
+8. Result includes host_work_dir = <workspace_dir>/<ws>/work/ (added in v0.2.1) so the LLM can surface where its generated artifacts live on the host.
 ```
 
 ### 3.4 list_workspaces() — v0.2.0 (ADR-0006)
@@ -126,10 +127,13 @@ Guards:
                 (falls back to the directory mtime if the DB file is absent)
    - container_state: `podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}`
                       normalized to "running" / "stopped" / "absent"
-4. Returns {workspaces: [{id, last_used, container_state}]}
+4. Returns {workspaces: [{id, last_used, container_state, host_work_dir}]}
+   - host_work_dir = filepath.Join(workspace_dir, id, "work")
 ```
 
 No `Ensure` needed (disk + podman only). No side effects on containers.
+
+In v0.2.1 the per-item `host_work_dir` field was added (ADR-0006 amendment) so the LLM knows where `/work/foo.png` lands on the host without having to ask separately.
 
 ### 3.5 delete_workspace(workspace_id) — v0.2.0 (ADR-0006)
 

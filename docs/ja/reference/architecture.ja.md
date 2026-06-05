@@ -114,6 +114,7 @@
 5. Python: コードを実行、stdout/stderr/exit_code が返る
 6. MCP server: timeout 内に終了したら結果を返却、超過したらコンテナに kill シグナル
 7. MCP server: 一時 code ファイルは保持（デバッグ用、Phase 2 で TTL 削除）
+8. 戻り値に host_work_dir = <workspace_dir>/<ws>/work/ を含める (v0.2.1、LLM が生成 artifact のホスト側位置を把握できるように)
 ```
 
 ### 3.4 list_workspaces() — v0.2.0 (ADR-0006)
@@ -126,10 +127,13 @@
                 (なければディレクトリ自体の mtime)
    - container_state: podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}
                       → "running" / "stopped" / "absent" に正規化
-4. {workspaces: [{id, last_used, container_state}]} を返却
+4. {workspaces: [{id, last_used, container_state, host_work_dir}]} を返却
+   - host_work_dir = filepath.Join(workspace_dir, id, "work")
 ```
 
 `Ensure` 不要 (ディスクと podman を直接見るだけ)。コンテナは触らないので副作用なし。
+
+v0.2.1 で `host_work_dir` を各 item に追加 (ADR-0006 amendment)。LLM がコンテナ内 `/work/foo.png` のホスト側絶対パスを把握できるように。
 
 ### 3.5 delete_workspace(workspace_id) — v0.2.0 (ADR-0006)
 

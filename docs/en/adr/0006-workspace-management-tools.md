@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-06-05
+- Revisions:
+  - 2026-06-05: in v0.2.1, added `host_work_dir` to the `list_workspaces` items and the `execute_code` result, and expanded the `describe_runtime` notes / mount_points text to spell out the artifact-exchange convention to the LLM. See §Decision (v0.2.1 amendment) for rationale.
 - Driver: magi
 - Generalises to: none
 
@@ -32,7 +34,8 @@ Add three MCP tools:
       {
         "id": "samples",
         "last_used": "2026-06-05T14:30:00Z",
-        "container_state": "running"
+        "container_state": "running",
+        "host_work_dir": "/Users/magi/.data-toolbox/samples/work/"
       }
     ]
   }
@@ -40,6 +43,7 @@ Add three MCP tools:
 - **Source of truth**: disk (the presence of `<workspace_dir>/<id>/`)
 - **`last_used`**: `os.Stat().ModTime()` of `<workspace_dir>/<id>/work/analysis.duckdb`; falls back to the parent directory's ModTime when the DB file is absent
 - **`container_state`**: result of `podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}`, normalized to `"running"` / `"stopped"` / `"absent"`
+- **`host_work_dir`** (v0.2.1): absolute host path where the container's `/work/` mount lives, computed as `filepath.Join(workspace_dir, id, "work")`. Lets the LLM tell the user the on-host path of artifacts (PNGs, CSVs, parquet, etc.) it just produced.
 
 ### `delete_workspace`
 
@@ -72,10 +76,12 @@ A destructive operation, but MCP clients (Claude Desktop / Cursor) gate every to
     ],
     "fonts": ["Noto Sans CJK JP"],
     "network": "none",
-    "mount_points": {"/work": "host workspace work directory; container can read/write here"},
+    "mount_points": {"/work": "container directory bind-mounted to the host; files here appear on the host (see notes for the artifact-exchange pattern)"},
     "notes": [
-      "matplotlibrc preconfigured with Noto Sans CJK JP fallback; Japanese labels render without extra setup.",
-      "DuckDB file lives at /work/analysis.duckdb inside the container."
+      "matplotlibrc preconfigured with Noto Sans CJK JP first; Japanese labels render without extra setup.",
+      "DuckDB file lives at /work/analysis.duckdb inside the container.",
+      "Container runs as uid 1000; host bind-mounts via --userns keep-id:uid=1000,gid=1000.",
+      "ARTIFACT EXCHANGE: anything you write to /work/<name> inside the container appears on the host at <workspace_dir>/<workspace_id>/work/<name>. The exact host path for the workspace you are using is returned as host_work_dir in the execute_code result and in each list_workspaces item. Use this to hand files back to the user (PNG plots, exported CSV / Parquet, generated reports — anything). Do NOT base64-encode and embed in the response: it wastes the response budget and the user can open the file directly."
     ]
   }
   ```
@@ -84,6 +90,28 @@ A destructive operation, but MCP clients (Claude Desktop / Cursor) gate every to
 - **Accuracy stance**: things we claim are present are guaranteed to work; we do **not** advertise packages that could be reached via add-on installs under `network=bridge` — that's discoverable via `execute_code` if needed.
 
 The intent is that the LLM calls `describe_runtime` **once at session start**; the user approves it once, and subsequent calls live in the LLM's context.
+
+### v0.2.1 amendment: add `host_work_dir` to the `execute_code` result
+
+Real-machine verification on 2026-06-05 (Claude Desktop) surfaced a UX failure: after generating a matplotlib plot, the LLM did not know how to hand the file back to the user and tried to **base64-encode the PNG into the stdout** of the response. Root cause: the LLM had no signal that `/work/foo.png` inside the container corresponded to anything reachable on the host.
+
+The fix is to extend the `execute_code` result schema:
+
+```diff
+ {
+   "stdout": "...",
+   "stderr": "...",
+-  "exit_code": 0
++  "exit_code": 0,
++  "host_work_dir": "/Users/magi/.data-toolbox/<workspace_id>/work/"
+ }
+```
+
+- The value is the absolute path `filepath.Join(workspace_dir, workspace_id, "work")`.
+- The LLM can then say "I saved the plot to `{host_work_dir}foo.png`" and the user can open it directly.
+- Backward compatible: older clients ignore the new field; no behavioral change.
+
+This adds a field to a result schema first defined in ADR-0003 (`execute_code`). Strictly speaking that would belong in an ADR-0003 revision, but because the rationale ("surface what the LLM needs to know to operate the tool") is exactly this ADR's theme, it is recorded here as the v0.2.1 amendment.
 
 ## Consequences
 

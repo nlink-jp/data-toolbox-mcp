@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-06-05
+- Revisions:
+  - 2026-06-05: v0.2.1 で `list_workspaces` / `execute_code` 戻り値に `host_work_dir` を追加。`describe_runtime` の notes / mount_points 文言を拡充して artifact exchange convention を LLM に明示。理由は本文 §Decision (v0.2.1 amendment) 参照
 - Driver: magi
 - Generalises to: なし
 
@@ -32,7 +34,8 @@ MCP ツールを 3 つ追加する:
       {
         "id": "samples",
         "last_used": "2026-06-05T14:30:00Z",
-        "container_state": "running"
+        "container_state": "running",
+        "host_work_dir": "/Users/magi/.data-toolbox/samples/work/"
       }
     ]
   }
@@ -40,6 +43,7 @@ MCP ツールを 3 つ追加する:
 - **真実の源**: ディスク (`<workspace_dir>/<id>/` ディレクトリの存在)
 - **`last_used`**: `<workspace_dir>/<id>/work/analysis.duckdb` の `os.Stat().ModTime()`。ファイル不在なら親ディレクトリの ModTime にフォールバック
 - **`container_state`**: `podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}` 結果を `"running"` / `"stopped"` / `"absent"` の 3 値に正規化
+- **`host_work_dir`** (v0.2.1): コンテナ内 `/work/` がホスト側で実際にどこにマウントされているかの絶対パス。`filepath.Join(workspace_dir, id, "work")` で計算。LLM はこれを見て生成 artifact (PNG/CSV/Parquet 等) のホスト側パスをユーザーに伝えられる
 
 ### `delete_workspace`
 
@@ -72,10 +76,12 @@ MCP ツールを 3 つ追加する:
     ],
     "fonts": ["Noto Sans CJK JP"],
     "network": "none",
-    "mount_points": {"/work": "host workspace work directory; container can read/write here"},
+    "mount_points": {"/work": "container directory bind-mounted to the host; files here appear on the host (see notes for the artifact-exchange pattern)"},
     "notes": [
-      "matplotlibrc preconfigured with Noto Sans CJK JP fallback; Japanese labels render without extra setup.",
-      "DuckDB file lives at /work/analysis.duckdb inside the container."
+      "matplotlibrc preconfigured with Noto Sans CJK JP first; Japanese labels render without extra setup.",
+      "DuckDB file lives at /work/analysis.duckdb inside the container.",
+      "Container runs as uid 1000; host bind-mounts via --userns keep-id:uid=1000,gid=1000.",
+      "ARTIFACT EXCHANGE: anything you write to /work/<name> inside the container appears on the host at <workspace_dir>/<workspace_id>/work/<name>. The exact host path for the workspace you are using is returned as host_work_dir in the execute_code result and in each list_workspaces item. Use this to hand files back to the user (PNG plots, exported CSV / Parquet, generated reports — anything). Do NOT base64-encode and embed in the response: it wastes the response budget and the user can open the file directly."
     ]
   }
   ```
@@ -84,6 +90,28 @@ MCP ツールを 3 つ追加する:
 - **正確性方針**: "ある" と宣言したものは確実に動く / "ない" ものが追加 install 経由で実は使えるケース (`network=bridge` 時の `pip install`) はカバーしない (それは `execute_code` で試せばいい)
 
 `describe_runtime` の意義は、LLM が **最初に 1 回呼ぶ** ことを想定。ユーザーがツール呼び出しを承認するのは初回のみ、それ以降は LLM がコンテキストに保持する。
+
+### v0.2.1 amendment: `execute_code` 戻り値に `host_work_dir` を追加
+
+実機検証 (2026-06-05 Claude Desktop) で、LLM が matplotlib plot を生成した後にホスト側にどう渡すかを把握できず、**戻り値の stdout に base64 で埋め込んで返そうとする** 挙動が観測された。LLM はコンテナ内の `/work/foo.png` がホスト側のどこに対応するかを知らないことが原因。
+
+対策として `execute_code` の戻り値スキーマを拡張する:
+
+```diff
+ {
+   "stdout": "...",
+   "stderr": "...",
+-  "exit_code": 0
++  "exit_code": 0,
++  "host_work_dir": "/Users/magi/.data-toolbox/<workspace_id>/work/"
+ }
+```
+
+- 値は `<workspace_dir>/<workspace_id>/work/`（実際の絶対パス、`filepath.Join` で計算）
+- LLM はこのパスを見て「`{host_work_dir}foo.png` に書きました」とユーザーに案内できる
+- 後方互換: 既存クライアントは新フィールドを無視するだけ。破壊変更なし
+
+これは ADR-0003 で定義された `execute_code` の戻り値スキーマへの追加であり、本来なら ADR-0003 を改訂する範囲だが、文脈が「LLM への情報開示」(ADR-0006 の主題) と一致するため、本 ADR の v0.2.1 amendment として記録する。
 
 ## Consequences
 

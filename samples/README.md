@@ -97,9 +97,12 @@ Claude Desktop を再起動して設定を反映。
 
 期待動作: `{python_version: "3.12", packages: [...6 packages...], fonts: ["Noto Sans CJK JP"], network: "none", ...}` が返る。LLM はこれを見て matplotlib / Pillow / pandas / polars が使えること、日本語フォントが入っていることを把握する。
 
-> 月別の売上を棒グラフで描いて、タイトルに「月別売上 2026Q2」を入れて。`/work/sales.png` に保存して。
+> 月別の売上を棒グラフで描いて、タイトルに「月別売上 2026Q2」を入れて。`/work/sales.png` に保存して、ホスト側のファイルパスを教えて。
 
-期待動作: `execute_code` で matplotlib を使った日本語タイトル付きのグラフが生成される。UserWarning なしで描画されるのが ADR-0007 の matplotlibrc 設定 (Noto Sans CJK JP 先頭) の効果。
+期待動作 (v0.2.1):
+- `execute_code` で matplotlib を使った日本語タイトル付きグラフを生成 (UserWarning なし — ADR-0007 の matplotlibrc 設定の効果)
+- 戻り値の `host_work_dir` フィールド (例: `/Users/magi/.data-toolbox/samples/work/`) を見て、LLM が「`{host_work_dir}sales.png` に保存しました」とユーザーに具体的なホスト側パスを案内する
+- **base64 で PNG を埋め込んで返すのは間違い** — `describe_runtime` の notes (`ARTIFACT EXCHANGE` 説明) でも明確に禁じている (v0.2.1 amendment)
 
 ## サンプルデータの解析でわかること
 

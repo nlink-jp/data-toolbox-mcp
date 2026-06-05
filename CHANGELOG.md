@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-05
+
+Surface the on-host path of `/work` to the LLM so generated artifacts (PNG plots, exported CSVs, etc.) are handed back via a filesystem reference instead of base64.
+
+### Added
+
+- `host_work_dir` field in `execute_code` result and in each `list_workspaces` item. Value is `filepath.Join(workspace_dir, workspace_id, "work")`, the absolute host path that mirrors the container's `/work` mount.
+- Expanded `describe_runtime` notes with the artifact-exchange convention ("anything you write to `/work/<name>` appears on the host at `<workspace_dir>/<workspace_id>/work/<name>` ... do NOT base64-encode and embed in the response") and a userns / uid 1000 note.
+- Updated `describe_runtime` `mount_points["/work"]` description to point at the artifact-exchange notes.
+- ADR-0006 was revised in place with a v0.2.1 amendment section explaining the change. ADR-0006 Revisions line records the amendment.
+- `architecture.md` §3.3 (execute_code) and §3.4 (list_workspaces) updated to include `host_work_dir` in the documented return shapes.
+
+### Why
+
+Real-machine verification on 2026-06-05 (Claude Desktop, v0.2.0) revealed the LLM was attempting to **base64-encode generated PNG plots into the response** because it did not know the on-host location of files it wrote to `/work/`. The fix is purely informational (no runtime behavior change): tell the LLM where things land on the host, statically via `describe_runtime` notes and dynamically via per-call `host_work_dir` fields.
+
+### Backward compatibility
+
+Strictly additive: older clients ignore the new `host_work_dir` field. No tool arguments changed.
+
 ## [0.2.0] - 2026-06-05
 
 Workspace management, runtime introspection, and plotting support.
