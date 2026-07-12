@@ -12,12 +12,8 @@ LDFLAGS := -ldflags "-s -w -X $(MODULE)/cmd.Version=$(VERSION)"
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-PLATFORMS := \
-	darwin/amd64 \
-	darwin/arm64 \
-	linux/amd64 \
-	linux/arm64 \
-	windows/amd64
+# darwin ships arm64 only (no amd64, no universal). linux/windows keep their matrix.
+PLATFORMS := darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
 .PHONY: build build-all package test clean runtime-image help
 
@@ -30,33 +26,27 @@ build:
 ## build-all: Cross-compile and codesign each darwin build
 build-all:
 	@mkdir -p $(BIN_DIR)
-	$(foreach platform,$(PLATFORMS),$(call build_platform,$(platform)))
+	@for p in $(PLATFORMS); do os=$${p%/*}; arch=$${p#*/}; \
+		ext=""; [ "$$os" = windows ] && ext=".exe"; \
+		echo "Building $(BIN_DIR)/$(BINARY)-$$os-$$arch$$ext..."; \
+		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY)-$$os-$$arch$$ext . ; \
+	done
+	@scripts/codesign-darwin.sh $(BIN_DIR)/$(BINARY)-darwin-arm64 "$(CODESIGN_IDENTITY)" "$(BINARY)"
 
-define build_platform
-	$(eval OS   := $(word 1,$(subst /, ,$(1))))
-	$(eval ARCH := $(word 2,$(subst /, ,$(1))))
-	$(eval EXT  := $(if $(filter windows,$(OS)),.exe,))
-	$(eval OUT  := $(BIN_DIR)/$(BINARY)-$(OS)-$(ARCH)$(EXT))
-	@echo "Building $(OUT)..."
-	GOOS=$(OS) GOARCH=$(ARCH) go build $(LDFLAGS) -o $(OUT) .
-	@scripts/codesign-darwin.sh $(OUT) "$(CODESIGN_IDENTITY)"
-
-endef
-
-## package: Cross-compile, codesign, zip, and notarize darwin builds
+## package: archive each platform as <name>-v<version>-<os>-<arch>.<ext>
+## (darwin/windows=zip, linux=tar.gz); canonical binary + README + LICENSE
+## inside; notarize the darwin arm64 zip.
 package: build-all
-	$(foreach platform,$(PLATFORMS), \
-		$(eval OS   := $(word 1,$(subst /, ,$(platform)))) \
-		$(eval ARCH := $(word 2,$(subst /, ,$(platform)))) \
-		$(eval EXT  := $(if $(filter windows,$(OS)),.exe,)) \
-		$(eval BIN  := $(BIN_DIR)/$(BINARY)-$(OS)-$(ARCH)$(EXT)) \
-		$(eval ZIP  := $(BIN_DIR)/$(BINARY)-$(VERSION)-$(OS)-$(ARCH).zip) \
-		$(eval STAGE := $(BIN_DIR)/_pkg-$(OS)-$(ARCH)) \
-		rm -rf $(STAGE) && mkdir -p $(STAGE) ; \
-		cp $(BIN) $(STAGE)/$(BINARY)$(EXT) ; \
-		zip -j $(ZIP) $(STAGE)/$(BINARY)$(EXT) ; \
-		rm -rf $(STAGE) ;)
-	@scripts/notarize-darwin.sh $(BIN_DIR)/$(BINARY)-$(VERSION)-darwin-amd64.zip "$(NOTARY_PROFILE)"
+	@cd $(BIN_DIR) && for p in $(PLATFORMS); do os=$${p%/*}; arch=$${p#*/}; \
+		ext=""; [ "$$os" = windows ] && ext=".exe"; \
+		stage=_pkg; rm -rf $$stage; mkdir -p $$stage; \
+		cp "$(BINARY)-$$os-$$arch$$ext" "$$stage/$(BINARY)$$ext"; \
+		cp ../README.md ../LICENSE $$stage/; \
+		base="$(BINARY)-$(VERSION)-$$os-$$arch"; \
+		if [ "$$os" = linux ]; then ( cd $$stage && tar -czf "../$$base.tar.gz" * ); \
+		else ( cd $$stage && zip -q "../$$base.zip" * ); fi; \
+		rm -rf $$stage; \
+	done
 	@scripts/notarize-darwin.sh $(BIN_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip "$(NOTARY_PROFILE)"
 
 ## test: Run all unit tests
