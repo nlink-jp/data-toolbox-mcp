@@ -95,7 +95,7 @@ default_row_limit = 20000
 | `serve`（既定） | MCP stdio サーバーを起動 |
 | `build-runtime` | 同梱 Dockerfile を展開して `podman build` でランタイム image を作成 |
 | `doctor` | Podman / podman machine (macOS) / ランタイム image / config を診断 |
-| `version` | バージョン表示 |
+| `version` | バージョン表示（`--version` も同一の文字列を出力） |
 
 ## ツール
 

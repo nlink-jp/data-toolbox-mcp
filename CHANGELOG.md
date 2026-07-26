@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`--version` now works.** The binary only implemented a `version`
+  subcommand, so `data-toolbox-mcp --version` failed with "unknown flag" — and
+  the shared org homebrew formula template tests exactly that invocation, so
+  `brew test data-toolbox-mcp` failed. `rootCmd.Version` is now set, which
+  makes cobra provide the flag. The `version` subcommand is unchanged, and both
+  spellings print the identical string (bare version, no "<name> version "
+  prefix).
+
 ## [0.5.0] - 2026-07-12
 
 ### Removed

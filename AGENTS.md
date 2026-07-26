@@ -20,7 +20,7 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 | Path | Role | Phase 1 track |
 |------|------|---------------|
 | `main.go` | Entry point, delegates to cmd.Execute() | A |
-| `cmd/` | cobra subcommands (root / serve / build-runtime / doctor / version) | A |
+| `cmd/` | cobra subcommands (root / serve / build-runtime / doctor / version; `--version` flag too — the org homebrew formula tests it) | A |
 | `runtime/Dockerfile` | Source for the Python runtime container image (embedded via go:embed in Track E) | E |
 | `internal/transport/` | MCP stdio JSON-RPC framing | B |
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B |

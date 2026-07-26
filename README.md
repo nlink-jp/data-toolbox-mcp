@@ -95,7 +95,7 @@ See [`config.example.toml`](config.example.toml) for the full schema. Full clien
 | `serve` (default) | Start the MCP stdio server |
 | `build-runtime` | Unpack the embedded Dockerfile and `podman build` the runtime image |
 | `doctor` | Diagnose Podman, podman machine (macOS), runtime image, and config |
-| `version` | Show the binary version |
+| `version` | Show the binary version (`--version` prints the same string) |
 
 ## Tools
 
