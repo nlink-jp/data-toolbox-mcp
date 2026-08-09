@@ -35,7 +35,7 @@ MCP ツールを 3 つ追加する:
         "id": "samples",
         "last_used": "2026-06-05T14:30:00Z",
         "container_state": "running",
-        "host_work_dir": "/Users/magi/.data-toolbox/samples/work/"
+        "host_work_dir": "/Users/you/.data-toolbox/samples/work/"
       }
     ]
   }
@@ -103,7 +103,7 @@ MCP ツールを 3 つ追加する:
    "stderr": "...",
 -  "exit_code": 0
 +  "exit_code": 0,
-+  "host_work_dir": "/Users/magi/.data-toolbox/<workspace_id>/work/"
++  "host_work_dir": "/Users/you/.data-toolbox/<workspace_id>/work/"
  }
 ```
 

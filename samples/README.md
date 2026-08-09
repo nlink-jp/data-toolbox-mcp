@@ -14,7 +14,7 @@
 
 ```toml
 allowed_paths = [
-    "/Users/magi/works/nlink-jp/_wip/data-toolbox-mcp/samples",
+    "/Users/you/src/data-toolbox-mcp/samples",
     "~/Downloads",
 ]
 ```
@@ -101,7 +101,7 @@ Claude Desktop を再起動して設定を反映。
 
 期待動作 (v0.2.1):
 - `execute_code` で matplotlib を使った日本語タイトル付きグラフを生成 (UserWarning なし — ADR-0007 の matplotlibrc 設定の効果)
-- 戻り値の `host_work_dir` フィールド (例: `/Users/magi/.data-toolbox/samples/work/`) を見て、LLM が「`{host_work_dir}sales.png` に保存しました」とユーザーに具体的なホスト側パスを案内する
+- 戻り値の `host_work_dir` フィールド (例: `/Users/you/.data-toolbox/samples/work/`) を見て、LLM が「`{host_work_dir}sales.png` に保存しました」とユーザーに具体的なホスト側パスを案内する
 - **base64 で PNG を埋め込んで返すのは間違い** — `describe_runtime` の notes (`ARTIFACT EXCHANGE` 説明) でも明確に禁じている (v0.2.1 amendment)
 
 ### Stage 10: 画像のインライン返却 (v0.3.0 / ADR-0008)

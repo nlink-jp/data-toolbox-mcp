@@ -35,7 +35,7 @@ Add three MCP tools:
         "id": "samples",
         "last_used": "2026-06-05T14:30:00Z",
         "container_state": "running",
-        "host_work_dir": "/Users/magi/.data-toolbox/samples/work/"
+        "host_work_dir": "/Users/you/.data-toolbox/samples/work/"
       }
     ]
   }
@@ -103,7 +103,7 @@ The fix is to extend the `execute_code` result schema:
    "stderr": "...",
 -  "exit_code": 0
 +  "exit_code": 0,
-+  "host_work_dir": "/Users/magi/.data-toolbox/<workspace_id>/work/"
++  "host_work_dir": "/Users/you/.data-toolbox/<workspace_id>/work/"
  }
 ```
 

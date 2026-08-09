@@ -74,9 +74,9 @@ v0.4.0:
   "container_id": "ab12cd34..." | null,
   "container_state": "running" | "stopped" | "absent",
   "host_paths": {
-    "base": "/Users/magi/.data-toolbox/samples",
-    "work": "/Users/magi/.data-toolbox/samples/work",
-    "duckdb": "/Users/magi/.data-toolbox/samples/work/analysis.duckdb"
+    "base": "/Users/you/.data-toolbox/samples",
+    "work": "/Users/you/.data-toolbox/samples/work",
+    "duckdb": "/Users/you/.data-toolbox/samples/work/analysis.duckdb"
   },
   "disk_usage_bytes": 123456789
 }
@@ -125,7 +125,7 @@ v0.4.0:
   ```json
   {
     "workspace_id": "samples",
-    "host_work_dir": "/Users/magi/.data-toolbox/samples/work",
+    "host_work_dir": "/Users/you/.data-toolbox/samples/work",
     "container_state": "running",
     "tables": [
       {
