@@ -12,6 +12,7 @@ DuckDB + containerized Python execution exposed as a single-binary MCP server (s
 - `make test` — runs all Go unit tests
 - `make runtime-image` — builds the Podman runtime image (wraps `data-toolbox-mcp build-runtime`)
 - `make build-all` — cross-compile for darwin/linux × arm64/amd64
+- `make verify-release` — gate: .notarized marker + freshness (run before upload)
 
 Direct `go build` is **forbidden** by project convention; the wrapped form sets `-ldflags -X cmd.Version=...` from `git describe`.
 
