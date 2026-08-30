@@ -1,1 +1,4 @@
 dist/
+
+# Local Claude Code workspace
+.claude/
