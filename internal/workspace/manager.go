@@ -187,6 +187,20 @@ func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
 			// Skip non-workspace directories (hidden files, stray dirs, etc.).
 			continue
 		}
+		// A valid-looking name is not evidence of a workspace. The shipped
+		// config nests the log directory inside workspace_dir
+		// (log_file = "<workspace_dir>/logs/server.log"), and "logs" passes
+		// ValidateID, so it was listed as a workspace with a host_work_dir
+		// that does not exist — and an agent told to "discover prior
+		// workspaces" could pick it and have execute_code create work/ and
+		// analysis.duckdb inside the log directory.
+		//
+		// Ensure always creates <id>/work, so that directory is the marker.
+		// An operator may nest anything under workspace_dir; the listing
+		// must not assume otherwise.
+		if st, err := os.Stat(filepath.Join(m.cfg.Workspace.Dir, id, "work")); err != nil || !st.IsDir() {
+			continue
+		}
 		info := WorkspaceInfo{
 			ID:          id,
 			HostWorkDir: filepath.Join(m.cfg.Workspace.Dir, id, "work"),

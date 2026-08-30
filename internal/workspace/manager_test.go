@@ -327,3 +327,48 @@ func TestDeleteRejectsInvalidID(t *testing.T) {
 		t.Errorf("expected invalid workspace_id error, got: %v", err)
 	}
 }
+
+// A directory under workspace_dir is not a workspace just because its name
+// would pass ValidateID. The shipped config nests the log directory there
+// (log_file = "<workspace_dir>/logs/server.log"), and "logs" was listed as a
+// workspace with a host_work_dir that does not exist. An agent told to
+// "discover prior workspaces" could then pick it and have execute_code create
+// work/ and analysis.duckdb inside the log directory.
+func TestListSkipsDirectoriesThatAreNotWorkspaces(t *testing.T) {
+	cfg := config.Default()
+	cfg.Workspace.Dir = t.TempDir()
+
+	// A real workspace: Ensure always creates <id>/work.
+	if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, "analysis", "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The server's own log directory, holding only log files.
+	logs := filepath.Join(cfg.Workspace.Dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "server.log"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A directory an operator happened to leave there.
+	if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, "samples-backup"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := NewManager(cfg, newFakeClient(&fakeRunner{})).List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(infos) != 1 || infos[0].ID != "analysis" {
+		ids := make([]string, 0, len(infos))
+		for _, i := range infos {
+			ids = append(ids, i.ID)
+		}
+		t.Fatalf("listed %v, want only the real workspace [analysis]", ids)
+	}
+	// Nothing was created on the way: listing must not materialise a
+	// workspace out of a directory that was not one.
+	if _, err := os.Stat(filepath.Join(logs, "work")); !os.IsNotExist(err) {
+		t.Errorf("listing created work/ inside the log directory: %v", err)
+	}
+}

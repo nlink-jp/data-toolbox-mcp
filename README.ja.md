@@ -104,7 +104,7 @@ default_row_limit = 20000
 | `load_data` | `workspace_id`, `file_path` (ホスト), `table_name` | `{rows_loaded, schema}` |
 | `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
 | `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
-| `list_workspaces` | — | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` |
+| `list_workspaces` | — | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — 実在する workspace のみ。`workspace_dir` 配下の他のディレクトリ（ログ用など）は列挙しない |
 | `delete_workspace` | `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}` / `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
 | `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
 | `attach_files` | `workspace_id`, `paths: [string]` (1〜16、`/work/...` または相対) | MCP content 配列: summary text + 種別別 (image / text / metadata) ブロック |

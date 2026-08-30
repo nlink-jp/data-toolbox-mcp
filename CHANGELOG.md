@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`list_workspaces` no longer reports directories that are not workspaces.**
+  The shipped config nests the log directory inside `workspace_dir`
+  (`log_file = "<workspace_dir>/logs/server.log"`), and `logs` passes the id
+  pattern, so it was listed as a workspace with a `host_work_dir` that does not
+  exist. Since the tool tells agents to use it to "discover prior workspaces",
+  an agent could pick that phantom and have `execute_code` create `work/` and
+  `analysis.duckdb` inside the log directory. A workspace is now recognised by
+  the `work/` directory `Ensure` always creates, not by its name alone — an
+  operator may nest anything under `workspace_dir`, and the listing must not
+  assume otherwise.
+
 ## [0.5.1] - 2026-07-26
 
 ### Fixed

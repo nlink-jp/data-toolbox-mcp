@@ -62,7 +62,7 @@ func Register(srv *mcpserver.Server, mgr *workspace.Manager, cfg *config.Config)
 
 	srv.RegisterTool(mcpserver.Tool{
 		Name:        "list_workspaces",
-		Description: "List every workspace that has on-disk state (id, last_used, container_state). Use this to discover prior workspaces across chat sessions.",
+		Description: "List every workspace that has on-disk state (id, last_used, container_state). Use this to discover prior workspaces across chat sessions. Only directories that really are workspaces are listed — another directory under workspace_dir, such as the server's own log folder, is not one.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {},
