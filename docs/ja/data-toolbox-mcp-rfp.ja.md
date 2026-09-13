@@ -26,10 +26,10 @@ MCP ツールとして以下 3 つを公開する:
 ### Input / Output
 
 - **Transport**: MCP stdio（JSON-RPC over stdio）
-- **load_data の file_path**: ホスト絶対パス。`allowed_paths` 設定のホワイトリスト配下のみ許可。MCP サーバーがホストファイルを読み込み、コンテナ内の作業領域に供給
+- **load_data の file_path**: ホスト絶対パス。~~`allowed_paths` 設定のホワイトリスト配下のみ許可~~ → 2026-09-13 改訂（ADR-0011）: **allowlist は廃止**し、資格情報ディレクトリの固定ブラックリスト以外は読めるようになった。MCP サーバーがホストファイルを読み込み、コンテナ内の作業領域に供給
 - **query_data の出力**: JSON 配列形式 `[{col: val, ...}, ...]`。default LIMIT 20000 を自動付加し、超過時は明示的に警告（`[query] default_row_limit` で変更可）。MCP サーバーとしては「言われた範囲を可能な限り素直に返す」のがベースライン姿勢で、巨大結果のストリーミングやファイル経由受け渡しはクライアント側のエージェント実装に委ねる
 - **execute_code の出力**: stdout / stderr / exit_code を返却
-- **コンテナ → ホストの生成物**: コンテナ内 `/work` ボリュームをホスト側 `workspace_dir/<workspace_id>/work/` にマウントすることで自動同期。LLM が `/work/foo.png` に書けばホスト側で読める
+- **コンテナ → ホストの生成物**: コンテナ内 `/work` ボリュームをホスト側 ~~`workspace_dir/<workspace_id>/work/`~~ → 2026-09-13 改訂（ADR-0011）: **`<work_dir>/<workspace_id>/work/`**（`work_dir` は呼び出しごとの必須引数、config キーは廃止）にマウントすることで自動同期。LLM が `/work/foo.png` に書けばホスト側で読める
 
 ### Configuration
 

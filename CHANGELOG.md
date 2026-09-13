@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-09-14
+
+### Fixed
+
+- The RFP's Input/Output section still described `load_data` as whitelisted by
+  `allowed_paths` and the artifact mount as `workspace_dir/...`. Both are
+  annotated with the revision that overtook them, in either language, instead
+  of reading as current. (`docs/*/reference/phase1-plan` is left alone: it is
+  dated and marked a Phase 0 draft.)
+
 ## [0.6.1] - 2026-09-13
 
 ### Fixed

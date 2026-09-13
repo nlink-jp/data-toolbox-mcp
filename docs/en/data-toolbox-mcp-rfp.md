@@ -26,10 +26,10 @@ Three MCP tools are exposed:
 ### Input / Output
 
 - **Transport**: MCP stdio (JSON-RPC over stdio)
-- **`load_data` file_path**: Host absolute path. Only paths whitelisted under `allowed_paths` config are accepted. The MCP server reads the host file and supplies it to the container's working area.
+- **`load_data` file_path**: Host absolute path. ~~Only paths whitelisted under `allowed_paths` config are accepted.~~ → revised 2026-09-13 (ADR-0011): **the allowlist is gone**; any file the caller can read is accepted except a fixed blacklist of credential locations. The MCP server reads the host file and supplies it to the container's working area.
 - **`query_data` output**: JSON array `[{col: val, ...}, ...]`. Default LIMIT 20000 is auto-applied, with an explicit warning emitted when truncation occurs (configurable via `[query] default_row_limit`). The MCP server's baseline stance is to "return what was asked for, as faithfully as the channel allows"; streaming or file-handoff for huge results is left to the client-side agent implementation.
 - **`execute_code` output**: stdout, stderr, exit_code.
-- **Container-to-host artifacts**: The container's `/work` volume is mounted to `workspace_dir/<workspace_id>/work/` on the host, providing automatic two-way sync. The LLM can write `/work/foo.png` and read it back from the host.
+- **Container-to-host artifacts**: The container's `/work` volume is mounted to ~~`workspace_dir/<workspace_id>/work/`~~ → revised 2026-09-13 (ADR-0011): **`<work_dir>/<workspace_id>/work/`** (`work_dir` is a required per-call argument; the config key is gone) on the host, providing automatic two-way sync. The LLM can write `/work/foo.png` and read it back from the host.
 
 ### Configuration
 
