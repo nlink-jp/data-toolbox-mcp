@@ -100,7 +100,7 @@ default_row_limit = 20000
 | `load_data` | `workspace_id`, `file_path` (ホスト), `table_name` | `{rows_loaded, schema}` |
 | `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
 | `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
-| `list_workspaces` | — | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — 実在する workspace のみ。`workspace_dir` 配下の他のディレクトリ（ログ用など）は列挙しない |
+| `list_workspaces` | `work_dir` | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — あなたの `work_dir` 配下の実在する workspace のみ。他のディレクトリは列挙しない |
 | `delete_workspace` | `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}` / `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
 | `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
 | `attach_files` | `workspace_id`, `paths: [string]` (1〜16、`/work/...` または相対) | MCP content 配列: summary text + 種別別 (image / text / metadata) ブロック |
@@ -109,13 +109,14 @@ default_row_limit = 20000
 
 `load_data` は拡張子で reader を選択（`.csv` → `read_csv_auto`、`.json` / `.jsonl` → `read_json_auto`、`.parquet` → `read_parquet`）。`query_data` は SQL に `LIMIT` がない場合 `LIMIT [query] default_row_limit`（既定 20000）を自動付加。`execute_code` は `language="python"` のみ受け付け（ADR-0003）、ランタイムコンテナには `duckdb` / `pandas` / `polars` / `pyarrow` / `matplotlib` / `Pillow` と `fonts-noto-cjk` (日本語ラベル描画用、ADR-0007) が同梱されています。セッション冒頭で `describe_runtime` を 1 回呼べば、利用可能なパッケージとフォントが分かります。
 
-`attach_files` (v0.3.0 / ADR-0008) はファイルを MCP image content (PNG / JPG / SVG / GIF / WEBP / BMP) または text content (CSV / JSON / MD 等) として返却するので MCP クライアントがインライン表示します。`[attach] max_single_size_bytes` (既定 10 MiB) または `max_total_size_bytes` (既定 20 MiB) を超過するファイルは metadata-only に降格。`load_from_work` (v0.3.0 / ADR-0009) は execute_code で生成された `/work` 内ファイルを `allowed_paths` を経由せず直接 DuckDB table 化します。
+`attach_files` (v0.3.0 / ADR-0008) はファイルを MCP image content (PNG / JPG / SVG / GIF / WEBP / BMP) または text content (CSV / JSON / MD 等) として返却するので MCP クライアントがインライン表示します。`[attach] max_single_size_bytes` (既定 10 MiB) または `max_total_size_bytes` (既定 20 MiB) を超過するファイルは metadata-only に降格。`load_from_work` (v0.3.0 / ADR-0009) は execute_code で生成された `/work` 内ファイルを、サンドボックスの外に出ることなく直接 DuckDB table 化します。
 
 `describe_workspace` (v0.4.0 / ADR-0010) は workspace 内の全 user table の column スキーマを 1 ツールで返却 — `list_workspaces` (workspace 一覧) と対称形でセッション跨ぎの「ここに何ある？」を即座に把握できます。`query_data` (v0.4.0) は `truncated` + `total` を返すようになり、テーブル不在エラーには「同 workspace の table 一覧 + 他 workspace 一覧」の hint が details に乗ります。`delete_workspace` の `dry_run: true` で削除予定情報のみを取得できます。
 
 ## セキュリティモデル（要点）
 
-- `load_data` が読むファイルは `allowed_paths` で必ず制限。入力パスは絶対化 → `EvalSymlinks` 解決後、同じく解決済みの `allowed_paths` エントリと比較
+- 呼び出しは必ず `work_dir` — **あなたが読み戻せる**ディレクトリの絶対パス — を名指し、workspace は `<work_dir>/<workspace_id>/`。`execute_code` が `/work` に書いたファイルはそこに現れるので、結果の `host_work_dir` は開けるパスになる。`work_dir` は信用する前に検証される（絶対・実在・書込可、システム位置やホームそのもの、資格情報ディレクトリは拒否）
+- `load_data` はあなたが読めるファイルなら読む。例外は資格情報・エージェント制御ディレクトリの固定ブラックリスト（`~/.ssh`、`~/.aws`、`~/.gnupg`、`~/.config/gcloud`、`~/Library/Keychains`、`~/.claude`、`~/.codex`、任意の `.env`）。照合は渡されたままのパスと `EvalSymlinks` 解決後のパスを、各エントリの両方の綴りに対して行う。これは床であって境界ではない
 - コンテナは既定で `network=none`。ネットワーク（およびコンテナ内 `pip install`）を有効にするには `[container.limits] network = "bridge"` を設定。**特定プロセスのみ許可するような細粒度 ACL は意図的に提供しません**
 - コンテナは非 root ユーザー（ランタイム Dockerfile の UID 1000）で動作。rootless Podman ではホストユーザーが `--userns keep-id:uid=1000,gid=1000` でその UID にマップされる
 - ツールごとの timeout は `context.WithTimeout` で強制。期限切れ時は `podman exec` の子プロセスを kill した上で MCP リクエストには応答を返す（ハングしない）

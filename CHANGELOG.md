@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where the workspace actually is.
 - Two comments still described `load_from_work` as bypassing `allowed_paths`;
   there is no allowlist to bypass.
+- **README.ja was left behind by 0.6.0**: its security model still said
+  `load_data` is restricted to `allowed_paths`, and `list_workspaces` was still
+  documented as taking no arguments. It says what the English one says.
 
 ### Added
 
