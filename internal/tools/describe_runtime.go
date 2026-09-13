@@ -16,13 +16,13 @@ import (
 // reuse and so future fields (e.g. live values) can be layered on without
 // changing runtime.Manifest.
 type DescribeRuntimeResult struct {
-	PythonVersion  string             `json:"python_version"`
-	ContainerImage string             `json:"container_image"`
-	Packages       []runtime.Package  `json:"packages"`
-	Fonts          []string           `json:"fonts"`
-	Network        string             `json:"network"`
-	MountPoints    map[string]string  `json:"mount_points"`
-	Notes          []string           `json:"notes"`
+	PythonVersion  string            `json:"python_version"`
+	ContainerImage string            `json:"container_image"`
+	Packages       []runtime.Package `json:"packages"`
+	Fonts          []string          `json:"fonts"`
+	Network        string            `json:"network"`
+	MountPoints    map[string]string `json:"mount_points"`
+	Notes          []string          `json:"notes"`
 }
 
 // DescribeRuntime implements the describe_runtime MCP tool (ADR-0006).

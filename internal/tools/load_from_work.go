@@ -9,10 +9,12 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type loadFromWorkArgs struct {
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 	FilePath    string `json:"file_path"`
 	TableName   string `json:"table_name"`
@@ -45,7 +47,12 @@ func LoadFromWork(ctx context.Context, mgr *workspace.Manager, cfg *config.Confi
 			args.FilePath)
 	}
 
-	w, err := mgr.Ensure(ctx, args.WorkspaceID)
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+
+	w, err := mgr.Ensure(ctx, workDir, args.WorkspaceID)
 	if err != nil {
 		return nil, wrapWorkspaceErr(err)
 	}

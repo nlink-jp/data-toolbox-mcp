@@ -28,7 +28,6 @@ func (a loadFromWorkInput) rawArgs() json.RawMessage {
 
 func TestLoadFromWork_RejectsNonWorkPath(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
 
 	cases := []struct {
 		name     string
@@ -62,7 +61,6 @@ func TestLoadFromWork_RejectsNonWorkPath(t *testing.T) {
 // table-name handling at the same boundary as load_data.
 func TestLoadFromWork_RejectsBadArgs(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
 
 	cases := []struct {
 		name  string

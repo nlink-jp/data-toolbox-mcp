@@ -16,29 +16,30 @@ import (
 
 // attachInput is a small fixture helper.
 type attachInput struct {
+	work  string
 	wsID  string
 	paths []string
 }
 
 func (a attachInput) rawArgs() json.RawMessage {
 	b, _ := json.Marshal(map[string]any{
-		"workspace_id": a.wsID,
-		"paths":        a.paths,
+		"work_dir": a.work, "workspace_id": a.wsID,
+		"paths": a.paths,
 	})
 	return b
 }
 
 // setupAttachWorkspace creates a temp workspace with files placed in work/.
-func setupAttachWorkspace(t *testing.T, files map[string][]byte) *config.Config {
+func setupAttachWorkspace(t *testing.T, files map[string][]byte) (*config.Config, string) {
 	t.Helper()
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
-	work := filepath.Join(cfg.Workspace.Dir, "wsA", "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	work := t.TempDir()
+	wsWork := filepath.Join(work, "wsA", "work")
+	if err := os.MkdirAll(wsWork, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range files {
-		full := filepath.Join(work, name)
+		full := filepath.Join(wsWork, name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +47,7 @@ func setupAttachWorkspace(t *testing.T, files map[string][]byte) *config.Config 
 			t.Fatal(err)
 		}
 	}
-	return cfg
+	return cfg, work
 }
 
 // tinyPNG returns the smallest valid 1×1 PNG (~67 bytes).
@@ -65,15 +66,16 @@ func tinyPNG() []byte {
 }
 
 func TestAttachFiles_DispatchesByExtension(t *testing.T) {
-	cfg := setupAttachWorkspace(t, map[string][]byte{
-		"plot.png":  tinyPNG(),
-		"data.csv":  []byte("a,b\n1,2\n"),
-		"blob.bin":  []byte("\x00\x01\x02\x03binary data"),
-		"notes.md":  []byte("# heading\n"),
-		"out.svg":   []byte("<svg/>"),
+	cfg, work := setupAttachWorkspace(t, map[string][]byte{
+		"plot.png": tinyPNG(),
+		"data.csv": []byte("a,b\n1,2\n"),
+		"blob.bin": []byte("\x00\x01\x02\x03binary data"),
+		"notes.md": []byte("# heading\n"),
+		"out.svg":  []byte("<svg/>"),
 	})
 
 	res, err := AttachFiles(context.Background(), nil, cfg, attachInput{
+		work:  work,
 		wsID:  "wsA",
 		paths: []string{"plot.png", "data.csv", "blob.bin", "notes.md", "out.svg"},
 	}.rawArgs())
@@ -119,15 +121,16 @@ func TestAttachFiles_DispatchesByExtension(t *testing.T) {
 }
 
 func TestAttachFiles_RejectsPathTraversal(t *testing.T) {
-	cfg := setupAttachWorkspace(t, nil)
+	cfg, work := setupAttachWorkspace(t, nil)
 
 	cases := []string{
-		"/etc/passwd",          // absolute host path outside /work
-		"/work/../etc/passwd",  // escape via /work
-		"../escape",            // relative escape
+		"/etc/passwd",         // absolute host path outside /work
+		"/work/../etc/passwd", // escape via /work
+		"../escape",           // relative escape
 	}
 	for _, p := range cases {
 		_, err := AttachFiles(context.Background(), nil, cfg, attachInput{
+			work:  work,
 			wsID:  "wsA",
 			paths: []string{p},
 		}.rawArgs())
@@ -138,6 +141,7 @@ func TestAttachFiles_RejectsPathTraversal(t *testing.T) {
 
 	// Verify a known-bad path is recorded as rejected/missing in the result.
 	res, err := AttachFiles(context.Background(), nil, cfg, attachInput{
+		work:  work,
 		wsID:  "wsA",
 		paths: []string{"/etc/passwd"},
 	}.rawArgs())
@@ -158,10 +162,11 @@ func TestAttachFiles_OversizePerFileDowngrades(t *testing.T) {
 	// 2 KiB image; cap to 1 KiB single → must downgrade to metadata-only.
 	bigPNG := make([]byte, 2048)
 	copy(bigPNG, tinyPNG())
-	cfg := setupAttachWorkspace(t, map[string][]byte{"big.png": bigPNG})
+	cfg, work := setupAttachWorkspace(t, map[string][]byte{"big.png": bigPNG})
 	cfg.Attach.MaxSingleSizeBytes = 1024
 
 	res, err := AttachFiles(context.Background(), nil, cfg, attachInput{
+		work:  work,
 		wsID:  "wsA",
 		paths: []string{"big.png"},
 	}.rawArgs())
@@ -184,13 +189,14 @@ func TestAttachFiles_CumulativeBudgetDowngrades(t *testing.T) {
 	img2 := make([]byte, 3000)
 	copy(img1, tinyPNG())
 	copy(img2, tinyPNG())
-	cfg := setupAttachWorkspace(t, map[string][]byte{
+	cfg, work := setupAttachWorkspace(t, map[string][]byte{
 		"a.png": img1,
 		"b.png": img2,
 	})
 	cfg.Attach.MaxTotalSizeBytes = 4000 // less than two * 3000
 
 	res, err := AttachFiles(context.Background(), nil, cfg, attachInput{
+		work:  work,
 		wsID:  "wsA",
 		paths: []string{"a.png", "b.png"},
 	}.rawArgs())
@@ -210,31 +216,31 @@ func TestAttachFiles_CumulativeBudgetDowngrades(t *testing.T) {
 }
 
 func TestAttachFiles_RejectsBadArgs(t *testing.T) {
-	cfg := setupAttachWorkspace(t, nil)
+	cfg, work := setupAttachWorkspace(t, nil)
 
 	cases := []struct {
-		name  string
-		args  map[string]any
-		code  string
+		name string
+		args map[string]any
+		code string
 	}{
 		{
 			name: "empty workspace_id",
-			args: map[string]any{"workspace_id": "", "paths": []string{"x.png"}},
+			args: map[string]any{"work_dir": work, "workspace_id": "", "paths": []string{"x.png"}},
 			code: toolerr.CodeMissingArgument,
 		},
 		{
 			name: "invalid workspace_id",
-			args: map[string]any{"workspace_id": "../bad", "paths": []string{"x.png"}},
+			args: map[string]any{"work_dir": work, "workspace_id": "../bad", "paths": []string{"x.png"}},
 			code: toolerr.CodeInvalidWorkspaceID,
 		},
 		{
 			name: "empty paths",
-			args: map[string]any{"workspace_id": "wsA", "paths": []string{}},
+			args: map[string]any{"work_dir": work, "workspace_id": "wsA", "paths": []string{}},
 			code: toolerr.CodeMissingArgument,
 		},
 		{
 			name: "too many paths",
-			args: map[string]any{"workspace_id": "wsA", "paths": tooManyPaths(17)},
+			args: map[string]any{"work_dir": work, "workspace_id": "wsA", "paths": tooManyPaths(17)},
 			code: toolerr.CodeInvalidArguments,
 		},
 	}

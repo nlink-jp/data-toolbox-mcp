@@ -29,8 +29,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 	}
 
 	cfg := config.Default()
-	cfg.Workspace.Dir = wsDir
-	cfg.Workspace.AllowedPaths = []string{dataDir}
+	work := wsDir
 	// Drop CPU/memory limits to avoid cgroup-config issues on macOS Podman.
 	cfg.Container.Limits.CPU = ""
 	cfg.Container.Limits.Memory = ""
@@ -52,6 +51,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 
 	// 1) load_data
 	res, err := tools.LoadData(ctx, mgr, cfg, json.RawMessage(`{
+		"work_dir":"`+work+`",
 		"workspace_id":"itest",
 		"file_path":"`+csv+`",
 		"table_name":"sample"
@@ -69,6 +69,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 
 	// 2) query_data
 	res, err = tools.QueryData(ctx, mgr, cfg, json.RawMessage(`{
+		"work_dir":"`+work+`",
 		"workspace_id":"itest",
 		"sql":"SELECT a, b FROM sample ORDER BY a"
 	}`))
@@ -85,6 +86,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 
 	// 3) execute_code (positive path)
 	res, err = tools.ExecuteCode(ctx, mgr, cfg, json.RawMessage(`{
+		"work_dir":"`+work+`",
 		"workspace_id":"itest",
 		"language":"python",
 		"code":"import duckdb\ncon=duckdb.connect('/work/analysis.duckdb')\nprint(con.execute('SELECT count(*) FROM sample').fetchone()[0])\n"
@@ -102,6 +104,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 
 	// 4) execute_code rejects unsupported language
 	_, err = tools.ExecuteCode(ctx, mgr, cfg, json.RawMessage(`{
+		"work_dir":"`+work+`",
 		"workspace_id":"itest",
 		"language":"bash",
 		"code":"echo hi"
@@ -114,6 +117,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "outside.csv")
 	os.WriteFile(outside, []byte("a,b\n1,x\n"), 0o644)
 	_, err = tools.LoadData(ctx, mgr, cfg, json.RawMessage(`{
+		"work_dir":"`+work+`",
 		"workspace_id":"itest",
 		"file_path":"`+outside+`",
 		"table_name":"outside"

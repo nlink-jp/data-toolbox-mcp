@@ -28,7 +28,7 @@ For a config template, see `config.example.toml`. Standard locations:
 - `./config.toml` in the current directory
 - Or pass `--config /explicit/path.toml`
 
-The server runs without a config file, but `allowed_paths` defaults to empty so `load_data` rejects everything. To use the data-analysis flow, set up a config first.
+The server runs without a config file. Every call names its own `work_dir`, so there is no containment list to set up first — a config only tunes the container, query limits and logging.
 
 ## Claude Desktop
 
@@ -123,7 +123,7 @@ The first build takes 1–2 minutes and needs network for `pip install`. Re-run 
 
 ### Every `load_data` returns `path_not_allowed`
 
-`[workspace] allowed_paths` is empty in your `config.toml`, or `--config` isn't being passed. Run `dist/data-toolbox-mcp doctor` to see which config path is actually used.
+The path resolves into a credential or agent-control location (`~/.ssh`, `~/.aws`, …), which `load_data` refuses. Copy the file somewhere ordinary, or load it from `/work` with `load_from_work`.
 
 ### Want `pip install` inside `execute_code`
 

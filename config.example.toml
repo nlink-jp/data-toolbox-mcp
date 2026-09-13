@@ -6,17 +6,14 @@
 log_level = "info"
 log_file  = "~/.data-toolbox/logs/server.log"
 
-[workspace]
-# Where per-workspace state lives on the host
-# (DuckDB files and the mirror of the container's /work directory).
-workspace_dir = "~/.data-toolbox"
-
-# Host directories that load_data may read from.
-# Symlinks inside these paths are resolved and re-checked at runtime.
-allowed_paths = [
-    "~/data",
-    "~/Downloads",
-]
+# [workspace] has no settings any more (ADR-0011).
+#
+# workspace_dir is gone: a workspace lives under the work_dir the caller names
+# on every call, so what the container writes is somewhere the caller can open.
+# allowed_paths is gone with it: load_data reads any file you can read except a
+# fixed, in-code blacklist of credential locations (~/.ssh, ~/.aws, …).
+# A config still carrying either key fails at startup rather than having it
+# silently ignored.
 
 [container]
 # Built locally by `data-toolbox-mcp build-runtime` (ADR-0005).

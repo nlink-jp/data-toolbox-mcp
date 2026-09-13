@@ -26,6 +26,13 @@ type ServerConfig struct {
 	LogFile  string `toml:"log_file"`
 }
 
+// WorkspaceConfig is retained as a section with no keys.
+//
+// It held workspace_dir and allowed_paths, both removed in ADR-0011: a
+// workspace now lives under the work_dir the caller names on every call, and
+// what a host file may be is decided by a fixed blacklist rather than an
+// operator allowlist. The section stays declared so a config that still
+// carries either key is told what happened rather than "unknown key".
 type WorkspaceConfig struct {
 	Dir          string   `toml:"workspace_dir"`
 	AllowedPaths []string `toml:"allowed_paths"`
@@ -66,9 +73,7 @@ func Default() *Config {
 		Server: ServerConfig{
 			LogLevel: "info",
 		},
-		Workspace: WorkspaceConfig{
-			Dir: ExpandHome("~/.data-toolbox"),
-		},
+		Workspace: WorkspaceConfig{},
 		Container: ContainerConfig{
 			Image:      "localhost/data-toolbox-runtime:latest",
 			StopOnExit: true,
@@ -100,11 +105,20 @@ func Load(path string) (*Config, error) {
 	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
 		return nil, fmt.Errorf("unknown config keys: %v", undecoded)
 	}
-	cfg.Workspace.Dir = ExpandHome(cfg.Workspace.Dir)
-	cfg.Server.LogFile = ExpandHome(cfg.Server.LogFile)
-	for i, p := range cfg.Workspace.AllowedPaths {
-		cfg.Workspace.AllowedPaths[i] = ExpandHome(p)
+	// Removed keys are named, not ignored: an operator who wrote a
+	// containment list and had it silently dropped would believe it was in
+	// force (ADR-0011).
+	if cfg.Workspace.Dir != "" {
+		return nil, fmt.Errorf("load %s: workspace.workspace_dir was removed in ADR-0011: "+
+			"a workspace lives under the work_dir the caller names on every call, so the server "+
+			"no longer owns a root. Delete the key", path)
 	}
+	if len(cfg.Workspace.AllowedPaths) > 0 {
+		return nil, fmt.Errorf("load %s: workspace.allowed_paths was removed in ADR-0011: "+
+			"a host file is refused only if it lands in a credential or agent-control location, "+
+			"and the workspace itself is inside the caller's work_dir. Delete the key", path)
+	}
+	cfg.Server.LogFile = ExpandHome(cfg.Server.LogFile)
 	return cfg, nil
 }
 

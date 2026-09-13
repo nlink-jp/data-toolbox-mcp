@@ -29,7 +29,7 @@ func TestIntegrationEnsureRelease(t *testing.T) {
 	}
 
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 	cfg.Container.Image = image
 	// alpine doesn't accept --memory without cgroup setup on some hosts; keep limits empty here.
 	cfg.Container.Limits.CPU = ""
@@ -50,7 +50,7 @@ func TestIntegrationEnsureRelease(t *testing.T) {
 	defer m.Cleanup(context.Background())
 
 	ctx := context.Background()
-	w, err := m.Ensure(ctx, "itest")
+	w, err := m.Ensure(ctx, work, "itest")
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestIntegrationEnsureRelease(t *testing.T) {
 
 	// Idempotency: second Ensure should return the same handle without
 	// starting a new container.
-	w2, err := m.Ensure(ctx, "itest")
+	w2, err := m.Ensure(ctx, work, "itest")
 	if err != nil {
 		t.Fatalf("Ensure (second call): %v", err)
 	}
@@ -68,7 +68,7 @@ func TestIntegrationEnsureRelease(t *testing.T) {
 		t.Errorf("Ensure not idempotent: first=%q, second=%q", w.ContainerID, w2.ContainerID)
 	}
 
-	if err := m.Release(ctx, "itest"); err != nil {
+	if err := m.Release(ctx, work, "itest"); err != nil {
 		t.Errorf("Release: %v", err)
 	}
 }

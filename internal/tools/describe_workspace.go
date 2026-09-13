@@ -6,10 +6,12 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type describeWorkspaceArgs struct {
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 }
 
@@ -47,7 +49,12 @@ func DescribeWorkspace(ctx context.Context, mgr *workspace.Manager, cfg *config.
 		return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_id is required")
 	}
 
-	w, err := mgr.Ensure(ctx, args.WorkspaceID)
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+
+	w, err := mgr.Ensure(ctx, workDir, args.WorkspaceID)
 	if err != nil {
 		return nil, wrapWorkspaceErr(err)
 	}
@@ -92,7 +99,7 @@ print(json.dumps({"tables": out}))
 
 	// container_state: ask podman; default "absent" on error.
 	containerState := "absent"
-	if st, perr := mgr.ContainerStateOf(ctx, args.WorkspaceID); perr == nil {
+	if st, perr := mgr.ContainerStateOf(ctx, workDir, args.WorkspaceID); perr == nil {
 		containerState = st
 	}
 

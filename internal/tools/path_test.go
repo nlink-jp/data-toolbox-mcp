@@ -5,70 +5,70 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
 )
 
-func TestResolveAndCheck_AllowedDirect(t *testing.T) {
-	root := t.TempDir()
-	f := filepath.Join(root, "data.csv")
-	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+// The guard on a host file is a blacklist floor now, not an operator
+// allowlist (ADR-0011): an ordinary path is read, a credential location is
+// not, and a symlink cannot smuggle one in.
+
+func TestResolveInputTakesAnOrdinaryPath(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "data.csv")
+	if err := os.WriteFile(p, []byte("a,b\n1,2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ResolveAndCheck(f, []string{root})
+	got, err := ResolveInput(p)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("ResolveInput: %v", err)
 	}
-	// On macOS, /var/folders is a symlink to /private/var/folders, so we
-	// compare via EvalSymlinks on the expected too.
-	wantAbs, _ := filepath.EvalSymlinks(f)
-	if got != wantAbs {
-		t.Errorf("got %q, want %q", got, wantAbs)
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != resolved {
+		t.Errorf("got %q, want the resolved %q", got, resolved)
 	}
 }
 
-func TestResolveAndCheck_OutsideRejected(t *testing.T) {
-	allowed := t.TempDir()
-	other := t.TempDir()
-	f := filepath.Join(other, "secret.csv")
-	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
+func TestResolveInputRefusesCredentialLocations(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
 	}
-	_, err := ResolveAndCheck(f, []string{allowed})
-	if !errors.Is(err, ErrPathNotAllowed) {
-		t.Errorf("expected ErrPathNotAllowed, got %v", err)
+	p := filepath.Join(home, ".ssh", "config")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no %s on this host: %v", p, err)
+	}
+	if _, err := ResolveInput(p); !errors.Is(err, ErrPathNotAllowed) {
+		t.Errorf("err = %v, want path_not_allowed", err)
 	}
 }
 
-func TestResolveAndCheck_SymlinkJailBreak(t *testing.T) {
-	allowed := t.TempDir()
-	other := t.TempDir()
-	target := filepath.Join(other, "real-secret.csv")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
+// Resolution happens before the check, so a link planted in an ordinary
+// directory cannot point into a blacklisted one.
+func TestResolveInputFollowsSymlinksBeforeChecking(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
 	}
-	// allowed/jailbreak.csv -> ../<other>/real-secret.csv
-	link := filepath.Join(allowed, "jailbreak.csv")
+	target := filepath.Join(home, ".ssh")
+	if _, err := os.Stat(target); err != nil {
+		t.Skipf("no %s on this host: %v", target, err)
+	}
+	link := filepath.Join(t.TempDir(), "innocent.csv")
 	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlinks unavailable: %v", err)
 	}
-	_, err := ResolveAndCheck(link, []string{allowed})
-	if !errors.Is(err, ErrPathNotAllowed) {
-		t.Errorf("symlink jailbreak should be rejected, got %v", err)
+	if _, err := ResolveInput(link); err == nil {
+		t.Error("a symlink into a blacklisted directory must be rejected")
 	}
 }
 
-func TestResolveAndCheck_AllowedIsItselfSymlink(t *testing.T) {
-	real := t.TempDir()
-	parent := t.TempDir()
-	link := filepath.Join(parent, "alias")
-	if err := os.Symlink(real, link); err != nil {
-		t.Fatal(err)
-	}
-	f := filepath.Join(real, "data.csv")
-	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Pass the *symlinked* allowed path; ResolveAndCheck must resolve it.
-	if _, err := ResolveAndCheck(f, []string{link}); err != nil {
-		t.Errorf("should accept when allowed_paths entry is itself a symlink, got %v", err)
+func TestResolveInputRejectsMissingPath(t *testing.T) {
+	_, err := ResolveInput(filepath.Join(t.TempDir(), "absent.csv"))
+	if !errors.Is(err, toolerr.New(toolerr.CodeInvalidArguments, "")) {
+		t.Errorf("err = %v, want invalid_arguments", err)
 	}
 }

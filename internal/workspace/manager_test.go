@@ -40,7 +40,7 @@ func newFakeClient(fr *fakeRunner) *PodmanClient {
 
 func TestEnsureCreatesContainer(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 	cfg.Container.Image = "localhost/test:latest"
 
 	fr := &fakeRunner{}
@@ -55,21 +55,27 @@ func TestEnsureCreatesContainer(t *testing.T) {
 	}
 
 	m := NewManager(cfg, newFakeClient(fr))
-	w, err := m.Ensure(context.Background(), "alpha")
+	w, err := m.Ensure(context.Background(), work, "alpha")
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
 	if w.ContainerID != "abc123" {
 		t.Errorf("container ID: got %q, want abc123", w.ContainerID)
 	}
-	if w.ContainerName != "data-toolbox-mcp-alpha" {
-		t.Errorf("container name: got %q", w.ContainerName)
+	// The name carries the work directory's digest: the same workspace_id
+	// under two work directories is two workspaces, and one long-lived
+	// container cannot serve both.
+	if want := containerName(work, "alpha"); w.ContainerName != want {
+		t.Errorf("container name: got %q, want %q", w.ContainerName, want)
+	}
+	if other := containerName(t.TempDir(), "alpha"); other == w.ContainerName {
+		t.Error("the same id in a different work_dir must not reuse the container")
 	}
 }
 
 func TestEnsureIsIdempotent(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 
 	fr := &fakeRunner{}
 	fr.respond = func(args []string) ([]byte, []byte, int, error) {
@@ -83,13 +89,13 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	}
 
 	m := NewManager(cfg, newFakeClient(fr))
-	w1, err := m.Ensure(context.Background(), "beta")
+	w1, err := m.Ensure(context.Background(), work, "beta")
 	if err != nil {
 		t.Fatalf("ensure 1: %v", err)
 	}
 	calls1 := fr.callCount()
 
-	w2, err := m.Ensure(context.Background(), "beta")
+	w2, err := m.Ensure(context.Background(), work, "beta")
 	if err != nil {
 		t.Fatalf("ensure 2: %v", err)
 	}
@@ -103,7 +109,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 
 func TestEnsureReattachesExisting(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 
 	fr := &fakeRunner{}
 	fr.respond = func(args []string) ([]byte, []byte, int, error) {
@@ -118,7 +124,7 @@ func TestEnsureReattachesExisting(t *testing.T) {
 	}
 
 	m := NewManager(cfg, newFakeClient(fr))
-	w, err := m.Ensure(context.Background(), "reattach")
+	w, err := m.Ensure(context.Background(), work, "reattach")
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -129,10 +135,10 @@ func TestEnsureReattachesExisting(t *testing.T) {
 
 func TestEnsureRejectsInvalidID(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
 
-	_, err := m.Ensure(context.Background(), "../bad")
+	_, err := m.Ensure(context.Background(), work, "../bad")
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
@@ -143,7 +149,7 @@ func TestEnsureRejectsInvalidID(t *testing.T) {
 
 func TestReleaseStopsAndRemoves(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 
 	fr := &fakeRunner{}
 	fr.respond = func(args []string) ([]byte, []byte, int, error) {
@@ -159,10 +165,10 @@ func TestReleaseStopsAndRemoves(t *testing.T) {
 	}
 
 	m := NewManager(cfg, newFakeClient(fr))
-	if _, err := m.Ensure(context.Background(), "gamma"); err != nil {
+	if _, err := m.Ensure(context.Background(), work, "gamma"); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
-	if err := m.Release(context.Background(), "gamma"); err != nil {
+	if err := m.Release(context.Background(), work, "gamma"); err != nil {
 		t.Fatalf("release: %v", err)
 	}
 
@@ -187,10 +193,10 @@ func TestReleaseStopsAndRemoves(t *testing.T) {
 
 func TestListEmptyWhenDirAbsent(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = filepath.Join(t.TempDir(), "never-created")
+	work := filepath.Join(t.TempDir(), "never-created")
 	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
 
-	infos, err := m.List(context.Background())
+	infos, err := m.List(context.Background(), work)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -201,16 +207,16 @@ func TestListEmptyWhenDirAbsent(t *testing.T) {
 
 func TestListReturnsExistingWorkspaces(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 
 	// Seed three workspace dirs and a stray non-workspace entry.
 	for _, id := range []string{"alpha", "beta", "gamma"} {
-		if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, id, "work"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(work, id, "work"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Stray: invalid name → must be skipped.
-	if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, "..stray"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(work, "..stray"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -219,14 +225,14 @@ func TestListReturnsExistingWorkspaces(t *testing.T) {
 		if args[0] == "ps" {
 			// One running, one stopped, one absent — keyed by --filter name=.
 			for i, a := range args {
-				if a == "name=data-toolbox-mcp-alpha" {
+				if a == "name="+containerName(work, "alpha") {
 					_ = i
 					return []byte("running\n"), nil, 0, nil
 				}
-				if a == "name=data-toolbox-mcp-beta" {
+				if a == "name="+containerName(work, "beta") {
 					return []byte("exited\n"), nil, 0, nil
 				}
-				if a == "name=data-toolbox-mcp-gamma" {
+				if a == "name="+containerName(work, "gamma") {
 					return []byte(""), nil, 0, nil
 				}
 			}
@@ -234,7 +240,7 @@ func TestListReturnsExistingWorkspaces(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 	m := NewManager(cfg, newFakeClient(fr))
-	infos, err := m.List(context.Background())
+	infos, err := m.List(context.Background(), work)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -255,8 +261,8 @@ func TestListReturnsExistingWorkspaces(t *testing.T) {
 
 func TestDeleteRemovesContainerAndDisk(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
-	target := filepath.Join(cfg.Workspace.Dir, "doomed")
+	work := t.TempDir()
+	target := filepath.Join(work, "doomed")
 	if err := os.MkdirAll(filepath.Join(target, "work"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +279,7 @@ func TestDeleteRemovesContainerAndDisk(t *testing.T) {
 	}
 	m := NewManager(cfg, newFakeClient(fr))
 
-	if err := m.Delete(context.Background(), "doomed"); err != nil {
+	if err := m.Delete(context.Background(), work, "doomed"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -292,8 +298,8 @@ func TestDeleteRemovesContainerAndDisk(t *testing.T) {
 
 func TestDeleteIsIdempotentForAbsentContainer(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
-	target := filepath.Join(cfg.Workspace.Dir, "lonely")
+	work := t.TempDir()
+	target := filepath.Join(work, "lonely")
 	if err := os.MkdirAll(filepath.Join(target, "work"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +315,7 @@ func TestDeleteIsIdempotentForAbsentContainer(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 	m := NewManager(cfg, newFakeClient(fr))
-	if err := m.Delete(context.Background(), "lonely"); err != nil {
+	if err := m.Delete(context.Background(), work, "lonely"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -319,10 +325,10 @@ func TestDeleteIsIdempotentForAbsentContainer(t *testing.T) {
 
 func TestDeleteRejectsInvalidID(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
 
-	err := m.Delete(context.Background(), "../escape")
+	err := m.Delete(context.Background(), work, "../escape")
 	if err == nil || !strings.Contains(err.Error(), "invalid workspace_id") {
 		t.Errorf("expected invalid workspace_id error, got: %v", err)
 	}
@@ -336,14 +342,14 @@ func TestDeleteRejectsInvalidID(t *testing.T) {
 // work/ and analysis.duckdb inside the log directory.
 func TestListSkipsDirectoriesThatAreNotWorkspaces(t *testing.T) {
 	cfg := config.Default()
-	cfg.Workspace.Dir = t.TempDir()
+	work := t.TempDir()
 
 	// A real workspace: Ensure always creates <id>/work.
-	if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, "analysis", "work"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(work, "analysis", "work"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// The server's own log directory, holding only log files.
-	logs := filepath.Join(cfg.Workspace.Dir, "logs")
+	logs := filepath.Join(work, "logs")
 	if err := os.MkdirAll(logs, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -351,11 +357,11 @@ func TestListSkipsDirectoriesThatAreNotWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A directory an operator happened to leave there.
-	if err := os.MkdirAll(filepath.Join(cfg.Workspace.Dir, "samples-backup"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(work, "samples-backup"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	infos, err := NewManager(cfg, newFakeClient(&fakeRunner{})).List(context.Background())
+	infos, err := NewManager(cfg, newFakeClient(&fakeRunner{})).List(context.Background(), work)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

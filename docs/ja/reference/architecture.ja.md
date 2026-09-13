@@ -40,15 +40,15 @@
 │  ┌─────────────────────────▼──────────────┐  │
 │  │ Workspace Manager                      │  │
 │  │  - in-memory map: workspace_id → ref   │  │
-│  │  - disk state: <workspace_dir>/<ws>/   │  │
+│  │  - disk state: <work_dir>/<ws>/   │  │
 │  └────────┬─────────────────────┬─────────┘  │
 └───────────┼─────────────────────┼────────────┘
-            │ podman exec/run     │ host fs (allowed_paths)
+            │ podman exec/run     │ host fs (blacklist floor)
             ▼                     ▼
 ┌──────────────────────┐  ┌─────────────────────┐
 │ Podman Container     │  │ Host filesystem     │
-│ python:3.13-slim     │  │  allowed_paths/...  │
-│ + duckdb,pandas,...  │  │  workspace_dir/...  │
+│ python:3.13-slim     │  │  any readable path/...  │
+│ + duckdb,pandas,...  │  │  work_dir/...  │
 │                      │  │                     │
 │ /work ──────────────────▶ workspace/<ws>/work/│
 │ analysis.duckdb ────────▶ workspace/<ws>/analy│
@@ -57,7 +57,7 @@
 
 主要なデータの流れ:
 
-- **load_data**: MCP server がホストファイル（`allowed_paths` 内のみ）を読み、コンテナ内 Python に DuckDB ロードを依頼
+- **load_data**: MCP server がホストファイル（資格情報ブラックリスト以外）を読み、コンテナ内 Python に DuckDB ロードを依頼
 - **query_data**: コンテナ内 Python に SQL を実行させ、結果を JSON 配列で取得
 - **execute_code**: コンテナ内 Python で任意コードを実行、stdout/stderr/exit_code を取得
 
@@ -68,14 +68,14 @@
 | MCP クライアント (LLM) | 半信頼 | ユーザーが選んだソフトだが、LLM 生成コードは予測不能 |
 | MCP サーバープロセス | 信頼 | 本プロジェクトが署名・配布する |
 | Podman コンテナ | 半信頼 | 中で LLM 生成コードが走る |
-| ホストファイルシステム（`allowed_paths` 内） | 信頼 | ユーザーが明示的に許可した範囲 |
-| ホストファイルシステム（`allowed_paths` 外） | 信頼するがアクセス禁止 | サーバーが境界で拒否 |
-| `workspace_dir/<ws>/` | 信頼 | サーバーが管理する所有領域 |
+| ホストファイルシステム（通常のパス） | 信頼 | 呼び出し側が自分でも読める範囲 |
+| ホストファイルシステム（資格情報の位置） | 信頼するがアクセス禁止 | サーバーが境界で拒否（床であって sandbox ではない） |
+| `work_dir/<ws>/` | 信頼 | サーバーが管理する所有領域 |
 
 ガード:
 
 - LLM → MCP server: stdio 経由のみ、JSON-RPC の手前で粗いスキーマ検証
-- MCP server → ホスト fs: `allowed_paths` のホワイトリストチェック + シンボリックリンク解決後の再検査
+- MCP server → ホスト fs: 資格情報ブラックリスト検査（渡された綴りと symlink 解決後の両方）
 - MCP server → コンテナ: `podman exec` 経由のみ、入力サイズ上限あり
 - コンテナ → ホスト: `/work` マウントと DuckDB ファイルマウントのみ許可、`network=none` で外部通信遮断
 
@@ -85,10 +85,10 @@
 
 ```
 1. MCP server: workspace_id を検証 ([a-zA-Z0-9_-]{1,64})
-2. MCP server: file_path を allowed_paths と照合 (シンボリックリンク解決後)
+2. MCP server: file_path を ブラックリストと照合 (シンボリックリンク解決後)
 3. MCP server: Workspace Manager に「workspace_id を ensure」依頼
    - in-memory map にない → Podman に container ls し、無ければ run、ある場合は紐付けのみ
-4. MCP server: ホストの file_path を <workspace_dir>/<ws>/work/_upload/<fname> にコピー
+4. MCP server: ホストの file_path を <work_dir>/<ws>/work/_upload/<fname> にコピー
 5. MCP server: podman exec で Python に "duckdb から table_name = read_csv_auto('/work/_upload/<fname>')" を実行
 6. Python: DuckDB ファイルに INSERT、行数とスキーマを stdout に JSON で返す
 7. MCP server: JSON をパースして {rows_loaded, schema} を MCP クライアントに返却
@@ -111,26 +111,26 @@
 ```
 1. MCP server: language == "python" を検証（それ以外は unsupported_language エラー）
 2. MCP server: workspace_id 検証 + ensure
-3. MCP server: code を一時ファイル <workspace_dir>/<ws>/work/_code/<uuid>.py に書く
+3. MCP server: code を一時ファイル <work_dir>/<ws>/work/_code/<uuid>.py に書く
 4. MCP server: podman exec で `python /work/_code/<uuid>.py` を起動
 5. Python: コードを実行、stdout/stderr/exit_code が返る
 6. MCP server: timeout 内に終了したら結果を返却、超過したらコンテナに kill シグナル
 7. MCP server: 一時 code ファイルは保持（デバッグ用、Phase 2 で TTL 削除）
-8. 戻り値に host_work_dir = <workspace_dir>/<ws>/work/ を含める (v0.2.1、LLM が生成 artifact のホスト側位置を把握できるように)
+8. 戻り値に host_work_dir = <work_dir>/<ws>/work/ を含める (v0.2.1、LLM が生成 artifact のホスト側位置を把握できるように)
 ```
 
 ### 3.4 list_workspaces() — v0.2.0 (ADR-0006)
 
 ```
-1. MCP server: workspace_dir を os.ReadDir で走査
+1. MCP server: work_dir を os.ReadDir で走査
 2. 各エントリを workspace.ValidateID にかけて workspace 候補のみ抽出
 3. 各候補について:
-   - last_used: <workspace_dir>/<id>/work/analysis.duckdb の mtime
+   - last_used: <work_dir>/<id>/work/analysis.duckdb の mtime
                 (なければディレクトリ自体の mtime)
    - container_state: podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}
                       → "running" / "stopped" / "absent" に正規化
 4. {workspaces: [{id, last_used, container_state, host_work_dir}]} を返却
-   - host_work_dir = filepath.Join(workspace_dir, id, "work")
+   - host_work_dir = filepath.Join(work_dir, id, "work")
 ```
 
 `Ensure` 不要 (ディスクと podman を直接見るだけ)。コンテナは触らないので副作用なし。
@@ -141,7 +141,7 @@ v0.2.1 で `host_work_dir` を各 item に追加 (ADR-0006 amendment)。LLM が�
 
 ```
 1. MCP server: workspace.ValidateID で workspace_id 検証
-2. 計算した <workspace_dir>/<id> が <workspace_dir> の直接の子であることを
+2. 計算した <work_dir>/<id> が <work_dir> の直接の子であることを
    filepath.Clean で再検証 (path traversal 二重防御)
 3. dry_run = true (v0.4.0) のとき:
    - podman.FindByName + ContainerState を取得
@@ -151,7 +151,7 @@ v0.2.1 で `host_work_dir` を各 item に追加 (ADR-0006 amendment)。LLM が�
    - podman.FindByName でコンテナを検索
    - コンテナが存在すれば podman rm -f で除去
    - in-memory Manager.workspaces map から削除
-   - os.RemoveAll(<workspace_dir>/<id>/) でディスク状態を完全削除
+   - os.RemoveAll(<work_dir>/<id>/) でディスク状態を完全削除
    - {deleted: true, workspace_id} を返却
 ```
 
@@ -204,7 +204,7 @@ Ensure 不要 (Podman exec しない、ホストファイル読み出しのみ)�
 8. {rows_loaded, schema} を返却 (load_data と同形式)
 ```
 
-`load_data` との対比: `load_data` はホストファイル → サンドボックス取り込み (allowed_paths 検査あり)、`load_from_work` はサンドボックス内ファイル → table 化 (`/work` 配下のみ、allowed_paths は無関係)。
+`load_data` との対比: `load_data` はホストファイル → サンドボックス取り込み（ブラックリスト検査あり）、`load_from_work` はサンドボックス内ファイル → table 化（`/work` 配下のみ、ホストパスは無関係）。
 
 実装では reader 選択 + script 組立を `load_data` と共通ヘルパに切り出して DRY 化する。
 
@@ -242,7 +242,7 @@ type Workspace struct {
 ### 4.2 ディスク（永続）
 
 ```
-<workspace_dir>/
+<work_dir>/
 └── <workspace_id>/
     ├── analysis.duckdb       # DuckDB データファイル（コンテナ /work/analysis.duckdb にマウント）
     └── work/                 # コンテナ /work にマウント
@@ -257,7 +257,7 @@ type Workspace struct {
 
 - `ensure(workspace_id)` を呼ぶと:
   1. in-memory map を参照
-  2. なければ disk の `<workspace_dir>/<workspace_id>/` を確認
+  2. なければ disk の `<work_dir>/<workspace_id>/` を確認
   3. ディレクトリがあれば DuckDB ファイルを reattach、ContainerID を Podman に問い合わせ
   4. ディレクトリが無ければ作成、`podman run` で新規コンテナ起動
 - サーバー起動時に既存ディスク状態を eager に読み込まない（lazy: ensure 時に初めて触れる）
@@ -292,11 +292,11 @@ type Workspace struct {
 
 ### 6.1 ホストファイルアクセス
 
-- `allowed_paths` ホワイトリスト
+- 資格情報ブラックリスト（床であって sandbox ではない）
 - パス解決アルゴリズム:
   1. 入力 `file_path` を `filepath.Abs` で絶対化
   2. `filepath.EvalSymlinks` でシンボリックリンクを解決
-  3. 解決後のパスが `allowed_paths` のいずれかのプレフィックスに一致するか検査
+  3. 両方の綴りのいずれかがブラックリストに当たれば拒否
   4. 一致しなければ `path_not_allowed` エラー
 - これにより、`/Users/me/symlink-to-secret` のような迂回攻撃を防ぐ
 

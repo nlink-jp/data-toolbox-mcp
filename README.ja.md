@@ -32,7 +32,7 @@ LLM プロバイダーには一切依存しません。stdio で素の MCP プ�
 - **レジストリ push なし** — ランタイム Dockerfile は `go:embed` でバイナリに同梱、初回利用時にローカル build。([ADR-0005](docs/ja/adr/0005-local-build-image-distribution.ja.md))
 - **単一バイナリ・単一バージョン**: `serve` / `build-runtime` / `doctor` / `version` のサブコマンドはすべて 1 バイナリ
 - **構造化ツールエラー**: すべてのツールエラーには LLM クライアントが分岐に使える安定した `code` が付く（`path_not_allowed`, `unsupported_language`, `script_failed`, ...）
-- **多層パス防御**: `allowed_paths` は両側で `EvalSymlinks` を解決してから比較するため、シンボリックリンク jail-break を防ぐ
+- **多層パス防御**: 資格情報ブラックリストは「渡された綴り」と `EvalSymlinks` 解決後の両方で照合するため、リンクによる jail-break も、`~/.ssh` 自体がリンクの場合の素通りも防ぐ
 
 ## 必要環境
 
@@ -68,10 +68,6 @@ JSON
 最小限の `config.toml`:
 
 ```toml
-[workspace]
-workspace_dir = "~/.data-toolbox"
-allowed_paths = ["~/data", "~/Downloads"]
-
 [container]
 image        = "localhost/data-toolbox-runtime:latest"
 stop_on_exit = true

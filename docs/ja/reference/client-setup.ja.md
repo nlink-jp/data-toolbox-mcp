@@ -28,7 +28,7 @@ config.toml の例は `config.example.toml` を参照してください。配置
 - カレントディレクトリの `./config.toml`
 - 明示指定: `--config /path/to/config.toml`
 
-設定ファイル無しでも起動できますが、`allowed_paths` が空のため `load_data` がすべて拒否されます。データ分析シナリオを使うには必ず設定してください。
+設定ファイル無しでも起動できます。`work_dir` は呼び出しごとに渡すので、事前に封じ込めリストを用意する必要はありません（config はコンテナ・クエリ上限・ログの調整用です）。
 
 ## Claude Desktop
 
@@ -123,7 +123,7 @@ dist/data-toolbox-mcp build-runtime
 
 ### `load_data` がすべて `path_not_allowed` で失敗する
 
-`config.toml` の `[workspace] allowed_paths` が空、もしくは `--config` が渡されていない。`dist/data-toolbox-mcp doctor` で実際に使われる設定パスを確認。
+パスが資格情報・エージェント制御ファイルの位置（`~/.ssh`、`~/.aws` 等）に解決されたため `load_data` が拒否した。普通の場所へコピーするか、`/work` 配下に置いて `load_from_work` を使う。
 
 ### `execute_code` で `pip install` したい
 

@@ -40,15 +40,15 @@ This packages the MCP server, build tool, and diagnostic into a single binary, s
 │  ┌─────────────────────────▼──────────────┐  │
 │  │ Workspace Manager                      │  │
 │  │  - in-memory map: workspace_id → ref   │  │
-│  │  - disk state: <workspace_dir>/<ws>/   │  │
+│  │  - disk state: <work_dir>/<ws>/   │  │
 │  └────────┬─────────────────────┬─────────┘  │
 └───────────┼─────────────────────┼────────────┘
-            │ podman exec/run     │ host fs (allowed_paths)
+            │ podman exec/run     │ host fs (blacklist floor)
             ▼                     ▼
 ┌──────────────────────┐  ┌─────────────────────┐
 │ Podman Container     │  │ Host filesystem     │
-│ python:3.13-slim     │  │  allowed_paths/...  │
-│ + duckdb,pandas,...  │  │  workspace_dir/...  │
+│ python:3.13-slim     │  │  any readable path/...  │
+│ + duckdb,pandas,...  │  │  work_dir/...  │
 │                      │  │                     │
 │ /work ──────────────────▶ workspace/<ws>/work/│
 │ analysis.duckdb ────────▶ workspace/<ws>/analy│
@@ -57,7 +57,7 @@ This packages the MCP server, build tool, and diagnostic into a single binary, s
 
 Primary data flows:
 
-- **load_data**: MCP server reads a host file (only inside `allowed_paths`) and asks Python inside the container to load it into DuckDB
+- **load_data**: MCP server reads a host file (anything not in the credential blacklist) and asks Python inside the container to load it into DuckDB
 - **query_data**: Python inside the container runs SQL and returns a JSON array
 - **execute_code**: Python inside the container runs arbitrary code and returns stdout/stderr/exit_code
 
@@ -68,14 +68,14 @@ Primary data flows:
 | MCP client (LLM) | Semi-trusted | User-chosen software, but LLM-generated code is unpredictable |
 | MCP server process | Trusted | Built and signed by this project |
 | Podman container | Semi-trusted | Runs LLM-generated code inside |
-| Host filesystem inside `allowed_paths` | Trusted | Explicitly opt-in by the user |
-| Host filesystem outside `allowed_paths` | Trusted but blocked | Server denies at the boundary |
-| `workspace_dir/<ws>/` | Trusted | Owned and managed by the server |
+| Host filesystem, ordinary paths | Trusted | The caller could read them itself |
+| Host filesystem, credential locations | Trusted but blocked | Server denies at the boundary (a floor, not a sandbox) |
+| `<work_dir>/<ws>/` | Trusted | The caller's directory, materialized by the server |
 
 Guards:
 
 - LLM → MCP server: stdio only; coarse schema check before JSON-RPC dispatch
-- MCP server → host fs: `allowed_paths` whitelist + re-check after symlink resolution
+- MCP server → host fs: credential blacklist, checked on the path as given and after symlink resolution
 - MCP server → container: `podman exec` only, with input-size limits
 - Container → host: only `/work` and the DuckDB file are mounted; `network=none` blocks external traffic
 
@@ -85,10 +85,10 @@ Guards:
 
 ```
 1. MCP server validates workspace_id ([a-zA-Z0-9_-]{1,64})
-2. MCP server checks file_path against allowed_paths (after symlink resolution)
+2. MCP server checks file_path against the credential blacklist (both spellings)
 3. MCP server asks Workspace Manager to ensure(workspace_id)
    - not in in-memory map → `podman container ls`; if missing, `podman run`; if present, attach
-4. MCP server copies the host file_path to <workspace_dir>/<ws>/work/_upload/<fname>
+4. MCP server copies the host file_path to <work_dir>/<ws>/work/_upload/<fname>
 5. MCP server runs `podman exec` to instruct Python to "duckdb: CREATE TABLE table_name AS SELECT * FROM read_csv_auto('/work/_upload/<fname>')"
 6. Python inserts into the DuckDB file and returns {rows, schema} on stdout as JSON
 7. MCP server parses the JSON and returns {rows_loaded, schema} to the MCP client
@@ -111,21 +111,21 @@ Guards:
 ```
 1. MCP server checks language == "python" (else unsupported_language error)
 2. MCP server validates and ensures workspace_id
-3. MCP server writes the code to <workspace_dir>/<ws>/work/_code/<uuid>.py
+3. MCP server writes the code to <work_dir>/<ws>/work/_code/<uuid>.py
 4. MCP server starts `python /work/_code/<uuid>.py` via `podman exec`
 5. Python runs the code, returns stdout/stderr/exit_code
 6. If finished within the timeout, return; else kill the container
 7. Temp code files are retained (for debugging, with TTL cleanup planned in Phase 2)
-8. Result includes host_work_dir = <workspace_dir>/<ws>/work/ (added in v0.2.1) so the LLM can surface where its generated artifacts live on the host.
+8. Result includes host_work_dir = <work_dir>/<ws>/work/ (added in v0.2.1) so the LLM can surface where its generated artifacts live on the host.
 ```
 
 ### 3.4 list_workspaces() — v0.2.0 (ADR-0006)
 
 ```
-1. MCP server walks workspace_dir via os.ReadDir
+1. MCP server walks the caller's work_dir via os.ReadDir
 2. Each entry is passed through workspace.ValidateID; non-workspace entries are skipped
 3. For each candidate:
-   - last_used: mtime of <workspace_dir>/<id>/work/analysis.duckdb
+   - last_used: mtime of <work_dir>/<id>/work/analysis.duckdb
                 (falls back to the directory mtime if the DB file is absent)
    - container_state: `podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}`
                       normalized to "running" / "stopped" / "absent"
@@ -206,7 +206,7 @@ No Ensure (no Podman exec; host-side reads only). The use case is letting the LL
 8. Return {rows_loaded, schema} (same shape as load_data)
 ```
 
-Contrast with `load_data`: `load_data` is host → sandbox ingest (with `allowed_paths` check); `load_from_work` is sandbox → table (only under `/work`, no `allowed_paths` involvement).
+Contrast with `load_data`: `load_data` is host → sandbox ingest (blacklist-checked); `load_from_work` is sandbox → table (only under `/work`, no host path involved).
 
 Implementation factors the reader-pick and script assembly into a shared helper with `load_data` for DRY.
 
@@ -292,11 +292,11 @@ Per the `feedback_security_first` memory, this is integrated from Day-1 in Phase
 
 ### 6.1 Host file access
 
-- `allowed_paths` whitelist
+- the credential blacklist (a floor, not a sandbox)
 - Path resolution:
   1. Make the input `file_path` absolute via `filepath.Abs`
   2. Resolve symlinks with `filepath.EvalSymlinks`
-  3. Check whether the resolved path is prefixed by any of `allowed_paths`
+  3. Refuse the path if either spelling lands in a blacklisted location
   4. If not, return `path_not_allowed`
 - This blocks evasion via `/Users/me/symlink-to-secret`-style trickery
 

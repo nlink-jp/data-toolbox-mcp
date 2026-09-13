@@ -15,10 +15,12 @@ import (
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/mcpserver"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type attachFilesArgs struct {
+	WorkDir     string   `json:"work_dir"`
 	WorkspaceID string   `json:"workspace_id"`
 	Paths       []string `json:"paths"`
 }
@@ -65,13 +67,17 @@ var textExts = map[string]bool{
 //
 // The workspace is NOT Ensure'd (no Podman call). attach_files is pure host
 // filesystem inspection.
-func AttachFiles(_ context.Context, _ *workspace.Manager, cfg *config.Config, rawArgs json.RawMessage) (any, error) {
+func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, rawArgs json.RawMessage) (any, error) {
 	var args attachFilesArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return nil, toolerr.Newf(toolerr.CodeInvalidArguments, "invalid arguments: %v", err)
 	}
 	if args.WorkspaceID == "" {
 		return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_id is required")
+	}
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
 	}
 	if err := workspace.ValidateID(args.WorkspaceID); err != nil {
 		return nil, err
@@ -84,7 +90,7 @@ func AttachFiles(_ context.Context, _ *workspace.Manager, cfg *config.Config, ra
 			"too many paths: got %d, max %d", len(args.Paths), attachMaxPaths)
 	}
 
-	hostWorkDir := filepath.Join(cfg.Workspace.Dir, args.WorkspaceID, "work")
+	hostWorkDir := filepath.Join(workDir, args.WorkspaceID, "work")
 
 	maxSingle := cfg.Attach.MaxSingleSizeBytes
 	if maxSingle <= 0 {

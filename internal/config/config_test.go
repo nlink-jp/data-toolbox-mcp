@@ -12,8 +12,8 @@ import (
 func TestLoadFillsDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	body := `
-[workspace]
-allowed_paths = ["/tmp/data"]
+[query]
+default_row_limit = 20000
 `
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -33,8 +33,8 @@ allowed_paths = ["/tmp/data"]
 	if cfg.Container.Limits.Network != "none" {
 		t.Errorf("default network: got %q", cfg.Container.Limits.Network)
 	}
-	if len(cfg.Workspace.AllowedPaths) != 1 || cfg.Workspace.AllowedPaths[0] != "/tmp/data" {
-		t.Errorf("allowed_paths: got %v", cfg.Workspace.AllowedPaths)
+	if cfg.Workspace.Dir != "" || len(cfg.Workspace.AllowedPaths) != 0 {
+		t.Errorf("the server owns no workspace root and no allowlist any more: %+v", cfg.Workspace)
 	}
 }
 
@@ -69,5 +69,29 @@ func TestExpandHome(t *testing.T) {
 		if got := config.ExpandHome(in); got != want {
 			t.Errorf("ExpandHome(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The two removed keys fail the load by name. An operator who wrote a
+// containment list and had it silently dropped would believe it was in force
+// (ADR-0011).
+func TestLoadRejectsRemovedWorkspaceKeys(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"workspace_dir", "[workspace]\nworkspace_dir = \"~/.data-toolbox\"\n", "workspace.workspace_dir was removed"},
+		{"allowed_paths", "[workspace]\nallowed_paths = [\"/tmp/data\"]\n", "workspace.allowed_paths was removed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := config.Load(path)
+			if err == nil {
+				t.Fatal("a config carrying the removed key must fail to load")
+			}
+			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "ADR-0011") {
+				t.Errorf("error should name the key and the record: %v", err)
+			}
+		})
 	}
 }

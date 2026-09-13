@@ -1,27 +1,34 @@
 // Package tools implements the three MCP tools (load_data, query_data,
 // execute_code). All file-system access goes through this package's path
-// validation helpers so that allowed_paths is the single source of truth.
+// validation helpers, so the blacklist floor is applied in exactly one place.
 package tools
 
 import (
 	"path/filepath"
-	"strings"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 )
 
-// ErrPathNotAllowed is the sentinel for a host path outside allowed_paths.
+// ErrPathNotAllowed is the sentinel for a refused host path.
 // errors.Is(err, ErrPathNotAllowed) matches by Code so wrapped variants with
 // the requested path baked into the message still satisfy it.
 var ErrPathNotAllowed = toolerr.New(toolerr.CodePathNotAllowed, "path_not_allowed")
 
-// ResolveAndCheck returns the symlink-resolved absolute path of filePath if
-// (and only if) it is contained within one of allowedPaths. Symlinks inside
-// allowedPaths are also resolved before comparison, so symlink jail-breaks
-// like ~/data/leak -> /etc/passwd are caught.
+// ResolveInput returns the symlink-resolved absolute path of filePath, and
+// refuses it only if it lands in a blacklisted location.
 //
-// Per architecture.md §6.1.
-func ResolveAndCheck(filePath string, allowedPaths []string) (string, error) {
+// There is no operator allowlist any more (ADR-0011). The one that existed
+// could not express what it was for: prefix matching has no per-repository
+// granularity, so covering a work root meant listing the home directory, which
+// admits the files the list was there to keep out. What remains is a fixed
+// blacklist of credential and agent-control locations, and it is a floor, not
+// a boundary — bounding what this process may touch at all is a sandboxing
+// proxy's job.
+//
+// Both spellings are checked, as given and symlink-resolved, against both
+// spellings of every entry: a blacklisted directory may itself be a symlink.
+func ResolveInput(filePath string) (string, error) {
 	abs, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", toolerr.Newf(toolerr.CodeInvalidArguments, "filepath.Abs: %v", err)
@@ -31,22 +38,12 @@ func ResolveAndCheck(filePath string, allowedPaths []string) (string, error) {
 		return "", toolerr.Newf(toolerr.CodeInvalidArguments, "filepath.EvalSymlinks: %v", err)
 	}
 	real = filepath.Clean(real)
-
-	for _, allowed := range allowedPaths {
-		ar, err := filepath.EvalSymlinks(allowed)
-		if err != nil {
-			// allowed_paths entry may not exist on disk yet; fall back to its
-			// literal form so it still functions as a prefix guard.
-			ar = allowed
-		}
-		ar = filepath.Clean(ar)
-		if real == ar || strings.HasPrefix(real, ar+string(filepath.Separator)) {
-			return real, nil
-		}
+	if why := workdir.Sensitive(filePath, real); why != "" {
+		return "", toolerr.Newf(toolerr.CodePathNotAllowed,
+			"path_not_allowed: %s is refused: %s", filePath, why).WithDetails(map[string]any{
+			"file_path": filePath,
+			"resolved":  real,
+		})
 	}
-	return "", toolerr.Newf(toolerr.CodePathNotAllowed,
-		"path_not_allowed: %s is outside allowed_paths", filePath).WithDetails(map[string]any{
-		"file_path":     filePath,
-		"allowed_paths": allowedPaths,
-	})
+	return real, nil
 }

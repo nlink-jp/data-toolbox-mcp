@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking: every tool takes a required `work_dir`, and workspaces live under
+  it.** A workspace is `<work_dir>/<workspace_id>/`, so the `host_work_dir` a
+  result reports — where `execute_code`'s files land — is **a path the caller can
+  open**. Until now it was under the server's own `~/.data-toolbox`, which no
+  calling agent's file tools can read; `attach_files` returning content inline is
+  the reason that was survivable, not the design saying so. See
+  [ADR-0011](docs/en/adr/0011-work-dir-contract.md); organization ADR-021.
+- **Breaking: `workspace.workspace_dir` and `workspace.allowed_paths` are
+  removed**, and a config still carrying either fails at startup with the reason
+  named. The allowlist could not express what it was for: prefix matching has no
+  per-repository granularity, so covering a work root meant naming the home
+  directory, which admits the credential files the list existed to keep out.
+- `load_data` reads any file you can read, except a fixed in-code blacklist of
+  credential and agent-control locations (`~/.ssh`, `~/.aws`, `~/.gnupg`,
+  `~/.config/gcloud`, `~/Library/Keychains`, `~/.claude`, `~/.codex`, any
+  `.env`), checked on the path as given and on its symlink-resolved form. It is
+  a floor, not a boundary.
+- A runtime may supply the directory instead of the model: the server reads
+  `_meta["jp.nlink/work_dir"]` when the argument is absent. The argument wins.
+- Container names now carry a digest of the work directory: the same
+  `workspace_id` under two work directories is two workspaces, and one
+  long-lived container cannot serve both. Containers named
+  `data-toolbox-mcp-<id>` from earlier versions are not reused — remove them with
+  `podman rm` if they are not wanted, and workspaces under `~/.data-toolbox` are
+  left on disk but no longer referenced.
+
+### Added
+
+- `work_dir_required`, `work_dir_invalid`, `work_dir_not_found`,
+  `work_dir_not_writable`, `work_dir_denied` — the fleet's codes for the part of
+  the contract that failed.
+
 ## [0.5.2] - 2026-08-31
 
 ### Fixed

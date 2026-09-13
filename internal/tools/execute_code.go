@@ -9,10 +9,12 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type executeCodeArgs struct {
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 	Language    string `json:"language"`
 	Code        string `json:"code"`
@@ -45,7 +47,12 @@ func ExecuteCode(ctx context.Context, mgr *workspace.Manager, cfg *config.Config
 			WithDetails(map[string]any{"requested": args.Language, "supported": []string{"python"}})
 	}
 
-	w, err := mgr.Ensure(ctx, args.WorkspaceID)
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+
+	w, err := mgr.Ensure(ctx, workDir, args.WorkspaceID)
 	if err != nil {
 		return nil, wrapWorkspaceErr(err)
 	}

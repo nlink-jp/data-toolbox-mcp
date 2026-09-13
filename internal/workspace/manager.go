@@ -5,6 +5,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,11 +20,14 @@ import (
 type Workspace struct {
 	ID            string
 	ContainerID   string
-	ContainerName string // data-toolbox-mcp-<id>
-	HostBaseDir   string // <workspace_dir>/<id>
-	HostWorkDir   string // <workspace_dir>/<id>/work
-	HostDBPath    string // <workspace_dir>/<id>/analysis.duckdb
-	LastUsed      time.Time
+	ContainerName string // data-toolbox-mcp-<id>-<digest of work_dir>
+	HostBaseDir   string // <work_dir>/<id>
+	HostWorkDir   string // <work_dir>/<id>/work
+	HostDBPath    string // <work_dir>/<id>/work/analysis.duckdb
+	// WorkDir is the caller's directory this workspace lives in. It travels
+	// on every call (organization ADR-021): the server keeps no default.
+	WorkDir  string
+	LastUsed time.Time
 }
 
 // Manager owns every workspace's lifecycle.
@@ -46,13 +51,17 @@ func NewManager(cfg *config.Config, podman *PodmanClient) *Manager {
 // Idempotent: calling Ensure twice for the same id returns the same handle.
 // If a container with the expected name already exists (e.g. across server
 // restart), it is reattached rather than recreated.
-func (m *Manager) Ensure(ctx context.Context, id string) (*Workspace, error) {
+func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, error) {
 	if err := ValidateID(id); err != nil {
 		return nil, err
 	}
+	if !filepath.IsAbs(workDir) {
+		return nil, fmt.Errorf("work_dir %q must be an absolute path", workDir)
+	}
 
+	key := workspaceKey(workDir, id)
 	m.mu.Lock()
-	if w, ok := m.workspaces[id]; ok {
+	if w, ok := m.workspaces[key]; ok {
 		w.LastUsed = time.Now()
 		m.mu.Unlock()
 		return w, nil
@@ -60,14 +69,18 @@ func (m *Manager) Ensure(ctx context.Context, id string) (*Workspace, error) {
 	m.mu.Unlock()
 
 	w := &Workspace{
-		ID:            id,
-		ContainerName: "data-toolbox-mcp-" + id,
-		HostBaseDir:   filepath.Join(m.cfg.Workspace.Dir, id),
-		HostWorkDir:   filepath.Join(m.cfg.Workspace.Dir, id, "work"),
+		ID: id,
+		// The container name carries the work directory too: the same
+		// workspace_id under two different work directories is two
+		// workspaces, and one long-lived container cannot serve both.
+		ContainerName: containerName(workDir, id),
+		HostBaseDir:   filepath.Join(workDir, id),
+		HostWorkDir:   filepath.Join(workDir, id, "work"),
 		// DuckDB file lives inside the work/ directory so it is exposed via
 		// the single bind-mount of work/ → /work, and DuckDB can create it
 		// on first connect without us pre-touching an empty (invalid) file.
-		HostDBPath: filepath.Join(m.cfg.Workspace.Dir, id, "work", "analysis.duckdb"),
+		HostDBPath: filepath.Join(workDir, id, "work", "analysis.duckdb"),
+		WorkDir:    workDir,
 	}
 	if err := os.MkdirAll(w.HostWorkDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir workdir: %w", err)
@@ -101,16 +114,28 @@ func (m *Manager) Ensure(ctx context.Context, id string) (*Workspace, error) {
 	w.LastUsed = time.Now()
 
 	m.mu.Lock()
-	m.workspaces[id] = w
+	m.workspaces[key] = w
 	m.mu.Unlock()
 	return w, nil
 }
 
+// workspaceKey addresses a workspace the way a caller does: the pair of the
+// work directory it lives in and its id (organization ADR-021).
+func workspaceKey(workDir, id string) string { return workDir + "\x00" + id }
+
+// containerName derives a podman container name from that pair. The digest
+// keeps the name short and legal while staying stable across restarts, so a
+// workspace reattaches to its own container rather than someone else's.
+func containerName(workDir, id string) string {
+	sum := sha256.Sum256([]byte(workDir))
+	return "data-toolbox-mcp-" + id + "-" + hex.EncodeToString(sum[:4])
+}
+
 // Release stops and removes the container for id. Disk state (analysis.duckdb,
 // work/) is preserved so the workspace can be ensured again later.
-func (m *Manager) Release(ctx context.Context, id string) error {
+func (m *Manager) Release(ctx context.Context, workDir, id string) error {
 	m.mu.Lock()
-	w, ok := m.workspaces[id]
+	w, ok := m.workspaces[workspaceKey(workDir, id)]
 	if !ok {
 		m.mu.Unlock()
 		return nil
@@ -169,13 +194,13 @@ type WorkspaceInfo struct {
 // consulted so workspaces left over from previous server runs are also
 // discovered. An absent workspace_dir is not an error — an empty slice is
 // returned.
-func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
-	entries, err := os.ReadDir(m.cfg.Workspace.Dir)
+func (m *Manager) List(ctx context.Context, workDir string) ([]WorkspaceInfo, error) {
+	entries, err := os.ReadDir(workDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []WorkspaceInfo{}, nil
 		}
-		return nil, fmt.Errorf("read workspace_dir: %w", err)
+		return nil, fmt.Errorf("read work_dir: %w", err)
 	}
 	infos := make([]WorkspaceInfo, 0, len(entries))
 	for _, e := range entries {
@@ -198,22 +223,22 @@ func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
 		// Ensure always creates <id>/work, so that directory is the marker.
 		// An operator may nest anything under workspace_dir; the listing
 		// must not assume otherwise.
-		if st, err := os.Stat(filepath.Join(m.cfg.Workspace.Dir, id, "work")); err != nil || !st.IsDir() {
+		if st, err := os.Stat(filepath.Join(workDir, id, "work")); err != nil || !st.IsDir() {
 			continue
 		}
 		info := WorkspaceInfo{
 			ID:          id,
-			HostWorkDir: filepath.Join(m.cfg.Workspace.Dir, id, "work"),
+			HostWorkDir: filepath.Join(workDir, id, "work"),
 		}
 		// last_used: prefer the DuckDB file mtime; fall back to the directory mtime.
-		dbPath := filepath.Join(m.cfg.Workspace.Dir, id, "work", "analysis.duckdb")
+		dbPath := filepath.Join(workDir, id, "work", "analysis.duckdb")
 		if st, err := os.Stat(dbPath); err == nil {
 			info.LastUsed = st.ModTime()
 		} else if fi, err := e.Info(); err == nil {
 			info.LastUsed = fi.ModTime()
 		}
 		// container_state: ask podman; "absent" is the safe default on error.
-		if state, err := m.podman.ContainerState(ctx, "data-toolbox-mcp-"+id); err == nil {
+		if state, err := m.podman.ContainerState(ctx, containerName(workDir, id)); err == nil {
 			info.ContainerState = state
 		} else {
 			info.ContainerState = "absent"
@@ -226,8 +251,8 @@ func (m *Manager) List(ctx context.Context) ([]WorkspaceInfo, error) {
 // ContainerStateOf returns the workspace container's state ("running" /
 // "stopped" / "absent") without ensuring the workspace. Used by tools that
 // want to surface state without side-effects.
-func (m *Manager) ContainerStateOf(ctx context.Context, id string) (string, error) {
-	return m.podman.ContainerState(ctx, "data-toolbox-mcp-"+id)
+func (m *Manager) ContainerStateOf(ctx context.Context, workDir, id string) (string, error) {
+	return m.podman.ContainerState(ctx, containerName(workDir, id))
 }
 
 // DeletePreview describes what would be removed by Delete, without doing
@@ -245,13 +270,13 @@ type DeletePreview struct {
 // PreviewDelete returns metadata describing what a Delete(id) call would
 // remove, without removing anything. Same defense-in-depth ID + path-traversal
 // checks as Delete, so it errors on bad input before doing any work.
-func (m *Manager) PreviewDelete(ctx context.Context, id string) (*DeletePreview, error) {
+func (m *Manager) PreviewDelete(ctx context.Context, workDir, id string) (*DeletePreview, error) {
 	if err := ValidateID(id); err != nil {
 		return nil, err
 	}
-	baseDir := filepath.Join(m.cfg.Workspace.Dir, id)
+	baseDir := filepath.Join(workDir, id)
 	cleaned := filepath.Clean(baseDir)
-	parentClean := filepath.Clean(m.cfg.Workspace.Dir)
+	parentClean := filepath.Clean(workDir)
 	if filepath.Dir(cleaned) != parentClean {
 		return nil, fmt.Errorf("refused: %s is not a direct child of %s", cleaned, parentClean)
 	}
@@ -298,14 +323,14 @@ func diskUsage(root string) int64 {
 // recompute the cleaned absolute path and verify it is a direct child of
 // workspace_dir before calling os.RemoveAll, to make path-traversal bugs
 // reachable only by lying about workspace_dir itself.
-func (m *Manager) Delete(ctx context.Context, id string) error {
+func (m *Manager) Delete(ctx context.Context, workDir, id string) error {
 	if err := ValidateID(id); err != nil {
 		return err
 	}
 
-	baseDir := filepath.Join(m.cfg.Workspace.Dir, id)
+	baseDir := filepath.Join(workDir, id)
 	cleaned := filepath.Clean(baseDir)
-	parentClean := filepath.Clean(m.cfg.Workspace.Dir)
+	parentClean := filepath.Clean(workDir)
 	if filepath.Dir(cleaned) != parentClean {
 		return fmt.Errorf("refused to delete: %s is not a direct child of %s", cleaned, parentClean)
 	}
@@ -339,15 +364,15 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 // Returns the first error encountered but always attempts every workspace.
 func (m *Manager) Cleanup(ctx context.Context) error {
 	m.mu.Lock()
-	ids := make([]string, 0, len(m.workspaces))
-	for id := range m.workspaces {
-		ids = append(ids, id)
+	tracked := make([]*Workspace, 0, len(m.workspaces))
+	for _, w := range m.workspaces {
+		tracked = append(tracked, w)
 	}
 	m.mu.Unlock()
 
 	var firstErr error
-	for _, id := range ids {
-		if err := m.Release(ctx, id); err != nil && firstErr == nil {
+	for _, w := range tracked {
+		if err := m.Release(ctx, w.WorkDir, w.ID); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

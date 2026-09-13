@@ -7,10 +7,12 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type deleteWorkspaceArgs struct {
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 	DryRun      bool   `json:"dry_run"`
 }
@@ -19,6 +21,7 @@ type deleteWorkspaceArgs struct {
 // dry_run is false (the default, destructive case).
 type DeleteWorkspaceResult struct {
 	Deleted     bool   `json:"deleted"`
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 }
 
@@ -46,9 +49,13 @@ func DeleteWorkspace(ctx context.Context, mgr *workspace.Manager, _ *config.Conf
 	if args.WorkspaceID == "" {
 		return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_id is required")
 	}
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
+	}
 
 	if args.DryRun {
-		preview, err := mgr.PreviewDelete(ctx, args.WorkspaceID)
+		preview, err := mgr.PreviewDelete(ctx, workDir, args.WorkspaceID)
 		if err != nil {
 			var te *toolerr.Error
 			if errors.As(err, &te) {
@@ -70,7 +77,7 @@ func DeleteWorkspace(ctx context.Context, mgr *workspace.Manager, _ *config.Conf
 		}, nil
 	}
 
-	if err := mgr.Delete(ctx, args.WorkspaceID); err != nil {
+	if err := mgr.Delete(ctx, workDir, args.WorkspaceID); err != nil {
 		var te *toolerr.Error
 		if errors.As(err, &te) {
 			return nil, te

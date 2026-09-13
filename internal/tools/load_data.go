@@ -9,10 +9,12 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type loadDataArgs struct {
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 	FilePath    string `json:"file_path"`
 	TableName   string `json:"table_name"`
@@ -25,7 +27,7 @@ type LoadDataResult struct {
 }
 
 // LoadData implements the load_data MCP tool. Host file → workspace ingest.
-// Uses ResolveAndCheck for allowed_paths defense; the reader, script, and
+// Uses ResolveInput for the blacklist floor; the reader, script, and
 // result-parsing logic is shared with load_from_work via load_helpers.go.
 func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, rawArgs json.RawMessage) (any, error) {
 	var args loadDataArgs
@@ -40,12 +42,17 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 		return nil, err
 	}
 
-	resolved, err := ResolveAndCheck(args.FilePath, cfg.Workspace.AllowedPaths)
+	resolved, err := ResolveInput(args.FilePath)
 	if err != nil {
 		return nil, err
 	}
 
-	w, err := mgr.Ensure(ctx, args.WorkspaceID)
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+
+	w, err := mgr.Ensure(ctx, workDir, args.WorkspaceID)
 	if err != nil {
 		return nil, wrapWorkspaceErr(err)
 	}

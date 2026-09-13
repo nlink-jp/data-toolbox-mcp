@@ -9,10 +9,12 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
 type queryDataArgs struct {
+	WorkDir     string `json:"work_dir"`
 	WorkspaceID string `json:"workspace_id"`
 	SQL         string `json:"sql"`
 }
@@ -49,7 +51,12 @@ func QueryData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, 
 		return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_id and sql are required")
 	}
 
-	w, err := mgr.Ensure(ctx, args.WorkspaceID)
+	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+
+	w, err := mgr.Ensure(ctx, workDir, args.WorkspaceID)
 	if err != nil {
 		return nil, wrapWorkspaceErr(err)
 	}
@@ -159,7 +166,7 @@ func buildQueryScriptError(ctx context.Context, mgr *workspace.Manager, w *works
 		if tables, err := listTablesInWorkspace(ctx, mgr, w, cfg); err == nil {
 			details["available_tables_in_this_workspace"] = tables
 		}
-		if infos, err := mgr.List(ctx); err == nil {
+		if infos, err := mgr.List(ctx, w.WorkDir); err == nil {
 			others := make([]string, 0, len(infos))
 			for _, info := range infos {
 				if info.ID != wsID {

@@ -118,7 +118,7 @@ func checkConfig(out io.Writer, ok *bool) {
 	if path == "" {
 		cfg := config.Default()
 		fmt.Fprintln(out, "[OK]   config: not found, defaults will be used")
-		fmt.Fprintln(out, "       workspace_dir=", cfg.Workspace.Dir, "image=", cfg.Container.Image, "default_row_limit=", cfg.Query.DefaultRowLimit)
+		fmt.Fprintln(out, "       image=", cfg.Container.Image, "default_row_limit=", cfg.Query.DefaultRowLimit)
 		return
 	}
 	cfg, err := config.Load(path)
@@ -128,7 +128,7 @@ func checkConfig(out io.Writer, ok *bool) {
 		return
 	}
 	fmt.Fprintln(out, "[OK]   config:", path)
-	fmt.Fprintln(out, "       workspace_dir=", cfg.Workspace.Dir, "image=", cfg.Container.Image, "allowed_paths=", cfg.Workspace.AllowedPaths)
+	fmt.Fprintln(out, "       image=", cfg.Container.Image)
 }
 
 // findConfigPath mirrors resolveConfig's search order from cmd/serve.go.

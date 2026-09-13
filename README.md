@@ -32,7 +32,7 @@ The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to an
 - **No registry push** — the runtime Dockerfile is `go:embed`-ed and built locally on first use. ([ADR-0005](docs/en/adr/0005-local-build-image-distribution.md))
 - **Single binary, single version**: `serve` / `build-runtime` / `doctor` / `version` subcommands all ship in one binary.
 - **Structured tool errors**: every tool error has a stable `code` LLM clients can branch on (`path_not_allowed`, `unsupported_language`, `script_failed`, ...).
-- **Defense-in-depth path checks**: `allowed_paths` is enforced after `EvalSymlinks` on both sides, blocking symlink jail-breaks.
+- **Defense-in-depth path checks**: the credential blacklist is applied after `EvalSymlinks` and on the path as given, so a symlink cannot jail-break into `~/.ssh` and a symlinked `~/.ssh` cannot slip past.
 
 ## Requirements
 
@@ -68,10 +68,6 @@ JSON
 A minimal `config.toml`:
 
 ```toml
-[workspace]
-workspace_dir = "~/.data-toolbox"
-allowed_paths = ["~/data", "~/Downloads"]
-
 [container]
 image        = "localhost/data-toolbox-runtime:latest"
 stop_on_exit = true
@@ -104,7 +100,7 @@ See [`config.example.toml`](config.example.toml) for the full schema. Full clien
 | `load_data` | `workspace_id`, `file_path` (host), `table_name` | `{rows_loaded, schema}` |
 | `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
 | `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
-| `list_workspaces` | — | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — only real workspaces; other directories under `workspace_dir` (the log folder, say) are skipped |
+| `list_workspaces` | `work_dir` | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — only real workspaces under your `work_dir`; other directories are skipped |
 | `delete_workspace` | `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}`; `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
 | `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
 | `attach_files` | `workspace_id`, `paths: [string]` (1–16, `/work/...` or relative) | MCP content array: summary text + image / text / metadata blocks per file |
@@ -113,13 +109,14 @@ See [`config.example.toml`](config.example.toml) for the full schema. Full clien
 
 `load_data` infers the reader from the file extension (`.csv` → `read_csv_auto`, `.json` / `.jsonl` → `read_json_auto`, `.parquet` → `read_parquet`). `query_data` auto-appends `LIMIT [query] default_row_limit` (default 20000) when the SQL has no `LIMIT`. `execute_code` only accepts `language="python"` in this version (ADR-0003); the runtime container ships with `duckdb`, `pandas`, `polars`, `pyarrow`, `matplotlib`, and `Pillow`, plus `fonts-noto-cjk` so Japanese matplotlib labels render without setup (ADR-0007). Call `describe_runtime` once at session start to inspect what's actually available.
 
-`attach_files` (v0.3.0 / ADR-0008) returns files as MCP image content (PNG / JPG / SVG / GIF / WEBP / BMP) or text content (CSV / JSON / MD / etc.) so MCP clients render them inline; files above `[attach] max_single_size_bytes` (default 10 MiB) or beyond `max_total_size_bytes` (default 20 MiB) downgrade to metadata-only. `load_from_work` (v0.3.0 / ADR-0009) table-izes files that already live in `/work` — typically files written by `execute_code` — without going through `allowed_paths`.
+`attach_files` (v0.3.0 / ADR-0008) returns files as MCP image content (PNG / JPG / SVG / GIF / WEBP / BMP) or text content (CSV / JSON / MD / etc.) so MCP clients render them inline; files above `[attach] max_single_size_bytes` (default 10 MiB) or beyond `max_total_size_bytes` (default 20 MiB) downgrade to metadata-only. `load_from_work` (v0.3.0 / ADR-0009) table-izes files that already live in `/work` — typically files written by `execute_code` — without leaving the sandbox.
 
 `describe_workspace` (v0.4.0 / ADR-0010) returns every user table's column schema in one call — pair with `list_workspaces` for cross-session "what's in here?". `query_data` (v0.4.0) result now includes `truncated` and `total`, and a missing-table error carries an actionable hint (available tables + other workspaces). `delete_workspace` accepts `dry_run: true` to show what would be removed without acting.
 
 ## Security model (essentials)
 
-- `allowed_paths` is enforced for every file `load_data` is asked to read. The path is made absolute and `EvalSymlinks`-resolved before being compared with the `EvalSymlinks`-resolved allowed entries.
+- Every call names `work_dir` — the absolute path of a directory **you can read back** — and the workspace is `<work_dir>/<workspace_id>/`. Files `execute_code` writes to `/work` land there, so the `host_work_dir` in a result is a path you can open. `work_dir` is validated before it is trusted: absolute, existing, writable, and never a system location, your home directory itself, or a credential directory.
+- `load_data` reads any file you can read, except a fixed in-code blacklist of credential and agent-control locations (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `~/Library/Keychains`, `~/.claude`, `~/.codex`, any `.env`). The check runs on the path as given and on its `EvalSymlinks`-resolved form, against both forms of every entry. It is a floor, not a boundary.
 - The container runs with `network=none` by default. To enable network access (and thus in-container `pip install`), set `[container.limits] network = "bridge"` — there is intentionally no finer-grained ACL.
 - The container runs as a non-root user (UID 1000 from the runtime Dockerfile). On rootless Podman the host user is mapped to that UID via `--userns keep-id:uid=1000,gid=1000`.
 - Per-tool timeouts are enforced via `context.WithTimeout`; on expiry the `podman exec` child is killed and the MCP request still returns (no hung calls).
