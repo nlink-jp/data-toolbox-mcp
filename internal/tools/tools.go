@@ -166,6 +166,7 @@ func Register(srv *mcpserver.Server, mgr *workspace.Manager, cfg *config.Config)
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
+				` + workDirProp + `,
 				"workspace_id": {"type":"string"}
 			},
 			"required": ["work_dir","workspace_id"],

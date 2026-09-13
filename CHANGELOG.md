@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-09-14
+
+### Fixed
+
+- **`describe_workspace` required `work_dir` without declaring it**, and a
+  strict client refuses the whole tool list for that: Vertex AI answers
+  `tools/list` with "schema at top-level requires unspecified property
+  'work_dir'" and the session cannot start at all (gem-agent, 2026-09-14). The
+  property is declared, from the same shared snippet every other tool uses.
+
+### Added
+
+- `TestEveryRequiredNameIsDeclared` — the existing contract test checked
+  declared ⇒ required and was blind to the other direction; JSON Schema permits
+  it, so nothing else caught it. Added to every server in the fleet.
+
 ## [0.6.2] - 2026-09-14
 
 ### Fixed
