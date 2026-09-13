@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TestManifestNamesNoRetiredKey` / `TestArtifactExchangeNoteNamesWorkDir` —
   the manifest goes to the model verbatim, so a retired name in it is a defect
   a test should catch.
+- A contract test walking every registered tool: no retired name in a schema or
+  a description, and `work_dir` required wherever it is declared. ADR-0011
+  asked for this test and the release shipped without it.
 - `make test` now also type-checks the `e2e` suite, which `go test ./...` never
   builds.
 
