@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-09-13
+
+### Fixed
+
+- **`describe_runtime`'s artifact-exchange note still gave the host path as
+  `<workspace_dir>/<workspace_id>/work/<name>`** — a config key 0.6.0 removed
+  and now refuses to load. It names the `work_dir` the call passed, which is
+  where the workspace actually is.
+- Two comments still described `load_from_work` as bypassing `allowed_paths`;
+  there is no allowlist to bypass.
+
+### Added
+
+- `TestManifestNamesNoRetiredKey` / `TestArtifactExchangeNoteNamesWorkDir` —
+  the manifest goes to the model verbatim, so a retired name in it is a defect
+  a test should catch.
+- `make test` now also type-checks the `e2e` suite, which `go test ./...` never
+  builds.
+
 ## [0.6.0] - 2026-09-13
 
 ### Changed

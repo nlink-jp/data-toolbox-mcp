@@ -138,7 +138,8 @@ func Register(srv *mcpserver.Server, mgr *workspace.Manager, cfg *config.Config)
 	})
 
 	// ADR-0009: table-ize files that already live inside the workspace's
-	// /work mount, bypassing allowed_paths.
+	// /work mount, which needs no host-path check at all — the file is
+	// already inside the workspace.
 	srv.RegisterTool(mcpserver.Tool{
 		Name:        "load_from_work",
 		Description: "Table-ize a CSV/JSON/Parquet file that already lives inside the workspace's /work directory. Use this for files written by execute_code (e.g. a polars write_csv output) when you want them back as DuckDB tables. file_path must start with /work/. For host files, use load_data instead.",

@@ -22,8 +22,8 @@ type loadFromWorkArgs struct {
 
 // LoadFromWork implements the load_from_work MCP tool (ADR-0009).
 //
-// Table-izes a file that already lives inside the workspace's /work mount,
-// bypassing allowed_paths. The file_path must start with /work/ and stay
+// Table-izes a file that already lives inside the workspace's /work mount, so
+// no host path is named at all. The file_path must start with /work/ and stay
 // inside the workspace's host-side work directory after symlink-clean
 // resolution (defense-in-depth).
 func LoadFromWork(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, rawArgs json.RawMessage) (any, error) {

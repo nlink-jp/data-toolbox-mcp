@@ -15,7 +15,7 @@ NOTARY_PROFILE    ?= nlink-jp-notary
 # darwin ships arm64 only (no amd64, no universal). linux/windows keep their matrix.
 PLATFORMS := darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: build build-all package verify-release test clean runtime-image help
+.PHONY: build build-all package verify-release test vet-tags clean runtime-image help
 
 ## build: Build binary for the current OS/Arch → ./dist/data-toolbox-mcp
 build:
@@ -68,6 +68,13 @@ verify-release:
 ## test: Run all unit tests
 test:
 	go test ./...
+	@$(MAKE) --no-print-directory vet-tags
+
+## vet-tags: Type-check the build-tagged test suites.
+## `go test ./...` never compiles them, so a field deleted from a result type
+## leaves them broken until someone runs the live suite months later.
+vet-tags:
+	go vet -tags e2e ./...
 
 ## clean: Remove build artifacts
 clean:
