@@ -77,8 +77,8 @@ func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, e
 		HostDBPath: filepath.Join(workDir, id, "work", "analysis.duckdb"),
 		WorkDir:    workDir,
 	}
-	if err := os.MkdirAll(w.HostWorkDir, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir workdir: %w", err)
+	if err := makeWorkDir(workDir, id); err != nil {
+		return nil, err
 	}
 
 	// Reuse existing container if present.
@@ -108,6 +108,38 @@ func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, e
 	w.ContainerID = containerID
 	m.remember(workDir, id, w)
 	return w, nil
+}
+
+// makeWorkDir creates <workDir>/<id>/work and refuses a workspace whose
+// directory is not really there. work_dir is the one path the caller vouched
+// for; <id> and <id>/work beneath it may be links, planted by sandboxed code
+// whenever a caller names a work_dir inside another workspace's /work. Both
+// the mkdir and, after it, the bind mount would follow such a link onto the
+// host. The directory is made through an os.Root on work_dir, which refuses a
+// path that leaves it, and what was made is then compared with what was asked
+// for, because podman is handed the path and resolves it on its own.
+func makeWorkDir(workDir, id string) error {
+	root, err := os.OpenRoot(workDir)
+	if err != nil {
+		return fmt.Errorf("open work_dir: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.MkdirAll(filepath.Join(id, "work"), 0o755); err != nil {
+		return fmt.Errorf("mkdir workdir: %w", err)
+	}
+	realBase, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		return fmt.Errorf("resolve work_dir: %w", err)
+	}
+	want := filepath.Join(realBase, id, "work")
+	got, err := filepath.EvalSymlinks(filepath.Join(workDir, id, "work"))
+	if err != nil {
+		return fmt.Errorf("resolve workdir: %w", err)
+	}
+	if got != want {
+		return fmt.Errorf("refused: workspace %q is a link to %s, not a directory under work_dir", id, got)
+	}
+	return nil
 }
 
 // workspaceKey addresses a workspace the way a caller does: the pair of the
@@ -156,10 +188,8 @@ func (m *Manager) forget(workDir, id string) (*Workspace, bool) {
 // never creates.
 func containerName(workDir, id string) string {
 	sum := sha256.Sum256([]byte(workDir))
-	return containerNamePrefix + id + "-" + hex.EncodeToString(sum[:4])
+	return "data-toolbox-mcp-" + id + "-" + hex.EncodeToString(sum[:4])
 }
-
-const containerNamePrefix = "data-toolbox-mcp-"
 
 // Release stops and removes the container for id. Disk state (analysis.duckdb,
 // work/) is preserved so the workspace can be ensured again later.

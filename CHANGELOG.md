@@ -24,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrong match a delete force-removed another workspace's container; with several,
   the delete failed on a multi-line "ID". `dry_run` reported the same wrong
   container. The name is now derived in one place and matched exactly.
-
 - **`attach_files` followed a symlink out of the workspace.** Its path check was
   lexical, and `/work` is writable by the code `execute_code` runs: a link left
   there was followed on the host, and the target's content — or, for an
@@ -36,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host, overwriting the target. All of these now go through an `os.Root` on the
   work directory, which refuses a path that leaves it; links that stay inside
   `/work` keep working. Requires Go 1.25 to build.
+- The same root is opened through a root on `work_dir` rather than by its own
+  path, and `Ensure` refuses a workspace whose directory is a link before podman
+  mounts it: a caller that names a `work_dir` inside another workspace's `/work`
+  let sandboxed code plant the workspace directory itself.
+- `attach_files` blocked forever on a FIFO named like a text file, and the
+  server answers one request at a time. Anything that is not a regular file is
+  rejected.
 - `samples/README.md` told readers to add `[workspace] allowed_paths` to
   `config.toml` — a key the server has refused to start with since 0.6.0. The
   tool tables in both READMEs listed `work_dir` for one tool out of eight, and

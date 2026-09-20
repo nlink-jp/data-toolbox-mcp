@@ -222,6 +222,34 @@ func TestPreviewDeleteReportsTheWorkspacesOwnContainer(t *testing.T) {
 	}
 }
 
+// A workspace directory that is a link must never be mounted into a container:
+// the link's target, anywhere on the host, would become the sandbox's /work.
+func TestEnsureRefusesALinkedWorkspaceDirectory(t *testing.T) {
+	for _, link := range []string{"gamma", filepath.Join("gamma", "work")} {
+		t.Run(link, func(t *testing.T) {
+			m, h := newHostManager()
+			work, outside := t.TempDir(), t.TempDir()
+			if link != "gamma" {
+				if err := os.Mkdir(filepath.Join(work, "gamma"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink(outside, filepath.Join(work, link)); err != nil {
+				t.Skipf("cannot create a symlink here: %v", err)
+			}
+			if _, err := m.Ensure(context.Background(), work, "gamma"); err == nil {
+				t.Error("Ensure accepted a workspace directory that is a link")
+			}
+			if h.runs != 0 {
+				t.Errorf("a container was started with the link mounted as /work")
+			}
+			if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+				t.Errorf("Ensure created %v outside work_dir", entries)
+			}
+		})
+	}
+}
+
 // TestWorkspaceIdentityIsSpelledOnce closes the class rather than the four
 // sites: a workspace is the pair (work_dir, id), and that pair has exactly one
 // spelling as a cache key, one as a container name and one as a podman filter.
@@ -249,7 +277,11 @@ func TestIdentityCheckFindsEachSecondSpelling(t *testing.T) {
 
 func (m *Manager) evictByHand(id string)  { delete(m.workspaces, id) }
 func legacyName(id string) string        { return "data-toolbox-mcp-" + id }
-func looseFilter(name string) string     { return "name=" + name }
+func looseFilter(name string) string     { return "--filter=name=" + name }
+
+const prefix = "data-toolbox-mcp-"
+
+func viaConstant(id string) string { return prefix + id }
 `
 	if err := os.WriteFile(filepath.Join(dir, "bad.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -261,7 +293,9 @@ func looseFilter(name string) string     { return "name=" + name }
 	if files != 1 {
 		t.Fatalf("parsed %d files, want 1", files)
 	}
-	for _, want := range []string{"evictByHand", "legacyName", "looseFilter"} {
+	// viaConstant has no literal of its own: the constant it leans on is what
+	// gets refused, at package level.
+	for _, want := range []string{"evictByHand", "legacyName", "looseFilter", "(package level)"} {
 		found := false
 		for _, v := range violations {
 			if strings.Contains(v, want) {
@@ -313,12 +347,15 @@ func identityViolations(dir string) (violations []string, files int, err error) 
 						return true
 					}
 					lit, _ := strconv.Unquote(x.Value)
-					if strings.HasPrefix(lit, "data-toolbox-mcp-") && name != "(package level)" {
+					// The literal has one home. A named constant would let any
+					// function rebuild the old name as `prefix + id` without a
+					// literal in sight — exactly the shape of the defect.
+					if strings.Contains(lit, "data-toolbox-mcp-") && name != "containerName" {
 						violations = append(violations, fmt.Sprintf(
 							"%s: %s spells a container name by hand; use containerName(workDir, id)",
 							fset.Position(x.Pos()), name))
 					}
-					if strings.HasPrefix(lit, "name=") && name != "exactName" {
+					if strings.Contains(lit, "name=") && name != "exactName" {
 						violations = append(violations, fmt.Sprintf(
 							"%s: %s builds a podman name filter by hand; use exactName",
 							fset.Position(x.Pos()), name))

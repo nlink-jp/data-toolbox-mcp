@@ -100,7 +100,7 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 	// os.Root refuses a path that leaves it, links included, in the kernel's
 	// terms rather than ours. A workspace that was never ensured has no work
 	// directory; its files are reported missing, as before.
-	root, rootErr := os.OpenRoot(hostWorkDir)
+	root, rootErr := openWorkRoot(workDir, args.WorkspaceID)
 	if rootErr == nil {
 		defer func() { _ = root.Close() }()
 	}
@@ -166,6 +166,18 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 			blocks = append(blocks, mcpserver.ContentBlock{
 				Type: "text",
 				Text: fmt.Sprintf("rejected: %s is a directory\n", absPath),
+			})
+			reports = append(reports, rep)
+			continue
+		}
+		// A FIFO or device named like a text file would block the read, and
+		// this server answers one request at a time.
+		if !fi.Mode().IsRegular() {
+			rep.Status = "rejected"
+			rep.Reason = "is not a regular file"
+			blocks = append(blocks, mcpserver.ContentBlock{
+				Type: "text",
+				Text: fmt.Sprintf("rejected: %s is not a regular file\n", absPath),
 			})
 			reports = append(reports, rep)
 			continue

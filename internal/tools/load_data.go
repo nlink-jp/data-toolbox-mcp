@@ -58,7 +58,7 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 		return nil, wrapWorkspaceErr(err)
 	}
 
-	if err := stageUpload(w.HostWorkDir, resolved); err != nil {
+	if err := stageUpload(w.WorkDir, w.ID, resolved); err != nil {
 		return nil, err
 	}
 
@@ -75,35 +75,52 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 // symlinks that code left behind; a plain MkdirAll + Create followed them and
 // wrote the copy wherever they pointed on the host. A root refuses a path that
 // leaves it, in the kernel's terms.
-func stageUpload(hostWorkDir, src string) error {
+func stageUpload(workDir, id, src string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return toolerr.Newf(toolerr.CodeWorkspaceFailed, "copy host file: %v", err)
 	}
 	defer func() { _ = in.Close() }()
-	if err := writeInWork(hostWorkDir, "_upload", filepath.Base(src), in); err != nil {
+	if err := writeInWork(workDir, id, "_upload", filepath.Base(src), in); err != nil {
 		return toolerr.Newf(toolerr.CodeWorkspaceFailed, "copy host file: %v", err)
 	}
 	return nil
 }
 
+// openWorkRoot opens a workspace's work directory, <workDir>/<id>/work, as an
+// os.Root — and reaches it through a root on workDir, the one directory the
+// caller vouched for. Opening the work directory by its path would follow a
+// link at <workDir>/<id> or <workDir>/<id>/work, which sandboxed code can
+// plant whenever a caller names a work_dir that lies inside another
+// workspace's /work.
+func openWorkRoot(workDir, id string) (*os.Root, error) {
+	wd, err := os.OpenRoot(workDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = wd.Close() }()
+	return wd.OpenRoot(filepath.Join(id, "work"))
+}
+
 // writeInWork is the only way this package writes into a workspace's work
-// directory: <hostWorkDir>/<dir>/<name>, through an os.Root, so neither dir nor
-// name can be a link that leads out. TestWorkspaceWritesGoThroughARoot keeps
-// the path-based calls from coming back.
-func writeInWork(hostWorkDir, dir, name string, content io.Reader) error {
-	root, err := os.OpenRoot(hostWorkDir)
+// directory: <workDir>/<id>/work/<dir>/<name>, through an os.Root, so neither
+// dir nor name can be a link that leads out. TestWorkspaceFilesGoThroughARoot
+// keeps the path-based calls from coming back.
+func writeInWork(workDir, id, dir, name string, content io.Reader) error {
+	root, err := openWorkRoot(workDir, id)
 	if err != nil {
 		return fmt.Errorf("open work directory: %w", err)
 	}
 	defer func() { _ = root.Close() }()
 
+	const inTheWay = "%s: %w (something other than a directory inside the workspace is at /work/%s — " +
+		"a link or a file sandboxed code left there; remove it on the host, or delete the workspace)"
 	if err := root.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
+		return fmt.Errorf(inTheWay, "mkdir "+dir, err, dir)
 	}
 	out, err := root.Create(filepath.Join(dir, name))
 	if err != nil {
-		return err
+		return fmt.Errorf(inTheWay, "create "+dir+"/"+name, err, dir)
 	}
 	if _, err := io.Copy(out, content); err != nil {
 		_ = out.Close()

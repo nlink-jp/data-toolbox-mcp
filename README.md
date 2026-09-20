@@ -38,7 +38,7 @@ The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to an
 
 - macOS or Linux
 - [Podman](https://podman.io/) (rootless). On macOS run `podman machine start` once before using.
-- Go 1.23+ to build from source
+- Go 1.25+ to build from source
 
 ## Quick start
 
@@ -117,7 +117,7 @@ See [`config.example.toml`](config.example.toml) for the full schema. Full clien
 
 - Every call names `work_dir` — the absolute path of a directory **you can read back** — and the workspace is `<work_dir>/<workspace_id>/`. Files `execute_code` writes to `/work` land there, so the `host_work_dir` in a result is a path you can open. `work_dir` is validated before it is trusted: absolute, existing, writable, and never a system location, your home directory itself, or a credential directory.
 - `load_data` reads any file you can read, except a fixed in-code blacklist of credential and agent-control locations (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `~/Library/Keychains`, `~/.claude`, `~/.codex`, any `.env`). The check runs on the path as given and on its `EvalSymlinks`-resolved form, against both forms of every entry. It is a floor, not a boundary.
-- `/work` is writable by the code `execute_code` runs, so a symlink found there is input from the sandbox. The server reaches a workspace's files through an `os.Root` on its work directory: `attach_files` rejects a path that leaves it through a link, and the server's own writes (`_upload/`, `_code/`) cannot be redirected by one. Links that stay inside `/work` keep working.
+- `/work` is writable by the code `execute_code` runs, so a symlink found there is input from the sandbox. The server reaches a workspace's files through an `os.Root` on its work directory, itself opened through a root on `work_dir`: `attach_files` rejects a path that leaves it through a link (and anything that is not a regular file), the server's own writes (`_upload/`, `_code/`) cannot be redirected by one, and a workspace whose directory is itself a link is refused before it is mounted. Links that stay inside `/work` keep working.
 - The container runs with `network=none` by default. To enable network access (and thus in-container `pip install`), set `[container.limits] network = "bridge"` — there is intentionally no finer-grained ACL.
 - The container runs as a non-root user (UID 1000 from the runtime Dockerfile). On rootless Podman the host user is mapped to that UID via `--userns keep-id:uid=1000,gid=1000`.
 - Per-tool timeouts are enforced via `context.WithTimeout`; on expiry the `podman exec` child is killed and the MCP request still returns (no hung calls).

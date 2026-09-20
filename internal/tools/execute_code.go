@@ -57,7 +57,7 @@ func ExecuteCode(ctx context.Context, mgr *workspace.Manager, cfg *config.Config
 	}
 
 	name := "exec-" + randomHex() + ".py"
-	if err := writeInWork(w.HostWorkDir, "_code", name, strings.NewReader(args.Code)); err != nil {
+	if err := writeInWork(w.WorkDir, w.ID, "_code", name, strings.NewReader(args.Code)); err != nil {
 		return nil, toolerr.Newf(toolerr.CodeWorkspaceFailed, "write code: %v", err)
 	}
 

@@ -18,7 +18,7 @@ import (
 // is planned per architecture.md §3.3.
 func execScript(ctx context.Context, mgr *workspace.Manager, w *workspace.Workspace, cfg *config.Config, prefix, script string) (*workspace.ExecResult, error) {
 	name := prefix + "-" + randomHex() + ".py"
-	if err := writeInWork(w.HostWorkDir, "_code", name, strings.NewReader(script)); err != nil {
+	if err := writeInWork(w.WorkDir, w.ID, "_code", name, strings.NewReader(script)); err != nil {
 		return nil, fmt.Errorf("write script: %w", err)
 	}
 	timeout := time.Duration(cfg.Container.Limits.TimeoutSeconds) * time.Second

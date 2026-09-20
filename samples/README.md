@@ -68,9 +68,9 @@
 
 ### Stage 7: エラーハンドリングの確認
 
-> `/etc/passwd` を読み込もうとして。
+> `~/.ssh/config` を読み込もうとして。
 
-期待動作: `path_not_allowed` 構造化エラー、`{"code":"path_not_allowed", ...}`。
+期待動作: `path_not_allowed` 構造化エラー、`{"code":"path_not_allowed", ...}`。拒否されるのは資格情報とエージェント制御ディレクトリの固定ブラックリストだけで（ADR-0011）、`/etc/passwd` のようにそこに載らないファイルは、サーバーが読めるなら読み込まれる — 境界を引くのはサンドボックス proxy の役目であって、このリストではない。
 
 > 言語を bash にして `echo hi` を実行して。
 
