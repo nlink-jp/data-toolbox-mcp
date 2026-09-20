@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -130,12 +131,22 @@ func (c *PodmanClient) Exec(ctx context.Context, opts ExecOpts) (*ExecResult, er
 	return &ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, nil
 }
 
+// exactName is the `podman ps --filter` that matches one container name and
+// nothing else. Podman reads `name=` as an unanchored regular expression, so
+// `name=data-toolbox-mcp-gamma` also matches data-toolbox-mcp-gamma2-… and the
+// same id under another work directory. With two hits the "ID" came back as
+// two lines, and with one wrong hit a delete force-removed somebody else's
+// container.
+func exactName(name string) string {
+	return "name=^" + regexp.QuoteMeta(name) + "$"
+}
+
 // ContainerState reports whether the container named `name` is running,
 // stopped (exited / created / paused), or absent. Used by list_workspaces
 // (ADR-0006) to surface workspace state to the LLM without an Ensure.
 func (c *PodmanClient) ContainerState(ctx context.Context, name string) (string, error) {
 	stdout, stderr, code, err := c.runner.Run(ctx, c.binary,
-		"ps", "-a", "--filter", "name="+name, "--format", "{{.State}}")
+		"ps", "-a", "--filter", exactName(name), "--format", "{{.State}}")
 	if err != nil && code == -1 {
 		return "", fmt.Errorf("podman ps: %w", err)
 	}
@@ -158,7 +169,7 @@ func (c *PodmanClient) ContainerState(ctx context.Context, name string) (string,
 // container with that name exists.
 func (c *PodmanClient) FindByName(ctx context.Context, name string) (string, error) {
 	stdout, stderr, code, err := c.runner.Run(ctx, c.binary,
-		"ps", "-a", "--filter", "name="+name, "--format", "{{.ID}}")
+		"ps", "-a", "--filter", exactName(name), "--format", "{{.ID}}")
 	if err != nil && code == -1 {
 		return "", fmt.Errorf("podman ps: %w", err)
 	}

@@ -72,3 +72,88 @@ func TestIntegrationEnsureRelease(t *testing.T) {
 		t.Errorf("Release: %v", err)
 	}
 }
+
+// TestIntegrationDeleteTouchesOnlyItsOwnWorkspace asks the real podman the
+// question the unit tests ask a fake: does Delete find the container Ensure
+// made, and only that one? What only podman can answer is whether the
+// anchored name filter means what exactName says it means — an unanchored
+// `name=` matches a longer id and the same id under another work directory.
+func TestIntegrationDeleteTouchesOnlyItsOwnWorkspace(t *testing.T) {
+	if os.Getenv("DATA_TOOLBOX_TEST_PODMAN") != "1" {
+		t.Skip("set DATA_TOOLBOX_TEST_PODMAN=1 to run podman integration tests")
+	}
+	image := os.Getenv("DATA_TOOLBOX_TEST_IMAGE")
+	if image == "" {
+		image = "docker.io/library/alpine:latest"
+	}
+	cfg := config.Default()
+	cfg.Container.Image = image
+	cfg.Container.Limits.CPU = ""
+	cfg.Container.Limits.Memory = ""
+
+	pc := workspace.NewPodmanClient()
+	ctx := context.Background()
+	if ok, err := pc.ImageExists(ctx, image); err != nil {
+		t.Skipf("podman image exists failed (is podman running?): %v", err)
+	} else if !ok {
+		t.Skipf("test image %q not present locally; run `podman pull %s` first", image, image)
+	}
+
+	m := workspace.NewManager(cfg, pc)
+	workA, workB := t.TempDir(), t.TempDir()
+	// Delete is the cleanup too: it removes the container whether or not the
+	// manager still has a handle for it.
+	t.Cleanup(func() {
+		_ = m.Delete(ctx, workA, "itestdel")
+		_ = m.Delete(ctx, workB, "itestdel")
+		_ = m.Delete(ctx, workA, "itestdel2")
+	})
+
+	first, err := m.Ensure(ctx, workA, "itestdel")
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if _, err := m.Ensure(ctx, workB, "itestdel"); err != nil {
+		t.Fatalf("Ensure (same id, other work_dir): %v", err)
+	}
+	if _, err := m.Ensure(ctx, workA, "itestdel2"); err != nil {
+		t.Fatalf("Ensure (longer id): %v", err)
+	}
+
+	preview, err := m.PreviewDelete(ctx, workA, "itestdel")
+	if err != nil {
+		t.Fatalf("PreviewDelete: %v", err)
+	}
+	if preview.ContainerID == "" || preview.ContainerState == "absent" {
+		t.Errorf("PreviewDelete did not find the workspace's container: id=%q state=%q",
+			preview.ContainerID, preview.ContainerState)
+	}
+
+	if err := m.Delete(ctx, workA, "itestdel"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	for _, c := range []struct {
+		label, workDir, id string
+		wantAbsent         bool
+	}{
+		{"the deleted workspace", workA, "itestdel", true},
+		{"same id, other work_dir", workB, "itestdel", false},
+		{"longer id", workA, "itestdel2", false},
+	} {
+		state, err := m.ContainerStateOf(ctx, c.workDir, c.id)
+		if err != nil {
+			t.Fatalf("%s: state: %v", c.label, err)
+		}
+		if (state == "absent") != c.wantAbsent {
+			t.Errorf("%s: container state %q after Delete", c.label, state)
+		}
+	}
+
+	again, err := m.Ensure(ctx, workA, "itestdel")
+	if err != nil {
+		t.Fatalf("Ensure after Delete: %v", err)
+	}
+	if again.ContainerID == first.ContainerID {
+		t.Errorf("Ensure after Delete returned the deleted container's handle %q", again.ContainerID)
+	}
+}

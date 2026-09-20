@@ -127,7 +127,8 @@ Guards:
 3. For each candidate:
    - last_used: mtime of <work_dir>/<id>/work/analysis.duckdb
                 (falls back to the directory mtime if the DB file is absent)
-   - container_state: `podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}`
+   - container_state: `podman ps -a --filter 'name=^data-toolbox-mcp-<id>-<digest of work_dir>$' --format {{.State}}`
+     (anchored: podman reads `name=` as an unanchored regex, so a bare name also matches longer ids and the same id under another work directory)
                       normalized to "running" / "stopped" / "absent"
 4. Returns {workspaces: [{id, last_used, container_state, host_work_dir}]}
    - host_work_dir = filepath.Join(workspace_dir, id, "work")

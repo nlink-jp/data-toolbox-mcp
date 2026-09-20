@@ -223,16 +223,15 @@ func TestListReturnsExistingWorkspaces(t *testing.T) {
 	fr := &fakeRunner{}
 	fr.respond = func(args []string) ([]byte, []byte, int, error) {
 		if args[0] == "ps" {
-			// One running, one stopped, one absent — keyed by --filter name=.
-			for i, a := range args {
-				if a == "name="+containerName(work, "alpha") {
-					_ = i
+			// One running, one stopped, one absent — keyed by the name filter.
+			for _, a := range args {
+				if a == exactName(containerName(work, "alpha")) {
 					return []byte("running\n"), nil, 0, nil
 				}
-				if a == "name="+containerName(work, "beta") {
+				if a == exactName(containerName(work, "beta")) {
 					return []byte("exited\n"), nil, 0, nil
 				}
-				if a == "name="+containerName(work, "gamma") {
+				if a == exactName(containerName(work, "gamma")) {
 					return []byte(""), nil, 0, nil
 				}
 			}

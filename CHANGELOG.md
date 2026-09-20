@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A deleted workspace could not be used again until the server restarted.**
+  `delete_workspace` removed the directory, but the manager kept the workspace's
+  cached handle — it stored handles under (work_dir, id) and evicted them by bare
+  id, so nothing was ever evicted. The next call with the same `workspace_id`
+  was answered from the cache: no container was started, the work directory was
+  not recreated, and every `execute_code` / `query_data` ran against a container
+  that no longer existed. Releasing a workspace had the same flaw.
+- **`delete_workspace` looked for the wrong container**, by the name used before
+  the work directory became part of a workspace's identity (0.6.0). Podman reads
+  `--filter name=` as an unanchored regular expression, so the old name still
+  matched — along with the same `workspace_id` under any other work directory
+  and any longer id that starts the same way (`gamma` matched `gamma2`). With one
+  wrong match a delete force-removed another workspace's container; with several,
+  the delete failed on a multi-line "ID". `dry_run` reported the same wrong
+  container. The name is now derived in one place and matched exactly.
+
+### Added
+
+- Tests that ask a podman which remembers its containers, instead of one that
+  answers every lookup with the same id — the reason the above stayed green —
+  plus an opt-in run of the same question against the real podman
+  (`DATA_TOOLBOX_TEST_PODMAN=1`), and a source check that keeps a second
+  spelling of a workspace's identity from coming back.
+
 ## [0.6.3] - 2026-09-14
 
 ### Fixed

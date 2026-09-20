@@ -59,14 +59,9 @@ func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, e
 		return nil, fmt.Errorf("work_dir %q must be an absolute path", workDir)
 	}
 
-	key := workspaceKey(workDir, id)
-	m.mu.Lock()
-	if w, ok := m.workspaces[key]; ok {
-		w.LastUsed = time.Now()
-		m.mu.Unlock()
+	if w, ok := m.lookup(workDir, id); ok {
 		return w, nil
 	}
-	m.mu.Unlock()
 
 	w := &Workspace{
 		ID: id,
@@ -111,11 +106,7 @@ func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, e
 		}
 	}
 	w.ContainerID = containerID
-	w.LastUsed = time.Now()
-
-	m.mu.Lock()
-	m.workspaces[key] = w
-	m.mu.Unlock()
+	m.remember(workDir, id, w)
 	return w, nil
 }
 
@@ -123,25 +114,60 @@ func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, e
 // work directory it lives in and its id (organization ADR-021).
 func workspaceKey(workDir, id string) string { return workDir + "\x00" + id }
 
+// lookup, remember and forget are the only code that touches m.workspaces by
+// key, and all three take the pair. Release and Delete used to evict with the
+// bare id while Ensure stored under the pair, so nothing was ever evicted: a
+// deleted workspace kept answering Ensure with the handle of a container that
+// no longer existed, until the server restarted. TestWorkspaceIdentityIsSpelledOnce
+// keeps a fourth spelling from appearing.
+func (m *Manager) lookup(workDir, id string) (*Workspace, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	w, ok := m.workspaces[workspaceKey(workDir, id)]
+	if ok {
+		w.LastUsed = time.Now()
+	}
+	return w, ok
+}
+
+func (m *Manager) remember(workDir, id string, w *Workspace) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	w.LastUsed = time.Now()
+	m.workspaces[workspaceKey(workDir, id)] = w
+}
+
+func (m *Manager) forget(workDir, id string) (*Workspace, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := workspaceKey(workDir, id)
+	w, ok := m.workspaces[key]
+	delete(m.workspaces, key)
+	return w, ok
+}
+
 // containerName derives a podman container name from that pair. The digest
 // keeps the name short and legal while staying stable across restarts, so a
 // workspace reattaches to its own container rather than someone else's.
+//
+// This is the only place the name is spelled. Delete and PreviewDelete used to
+// build "data-toolbox-mcp-<id>" by hand — the name from before the work
+// directory was part of the identity — and so looked for a container Ensure
+// never creates.
 func containerName(workDir, id string) string {
 	sum := sha256.Sum256([]byte(workDir))
-	return "data-toolbox-mcp-" + id + "-" + hex.EncodeToString(sum[:4])
+	return containerNamePrefix + id + "-" + hex.EncodeToString(sum[:4])
 }
+
+const containerNamePrefix = "data-toolbox-mcp-"
 
 // Release stops and removes the container for id. Disk state (analysis.duckdb,
 // work/) is preserved so the workspace can be ensured again later.
 func (m *Manager) Release(ctx context.Context, workDir, id string) error {
-	m.mu.Lock()
-	w, ok := m.workspaces[workspaceKey(workDir, id)]
+	w, ok := m.forget(workDir, id)
 	if !ok {
-		m.mu.Unlock()
 		return nil
 	}
-	delete(m.workspaces, id)
-	m.mu.Unlock()
 
 	if err := m.podman.Stop(ctx, w.ContainerID); err != nil {
 		// Continue to rm even if stop failed (container may already be stopped).
@@ -286,11 +312,11 @@ func (m *Manager) PreviewDelete(ctx context.Context, workDir, id string) (*Delet
 		HostWorkDir: filepath.Join(cleaned, "work"),
 		HostDBPath:  filepath.Join(cleaned, "work", "analysis.duckdb"),
 	}
-	containerName := "data-toolbox-mcp-" + id
-	if cid, err := m.podman.FindByName(ctx, containerName); err == nil {
+	name := containerName(workDir, id)
+	if cid, err := m.podman.FindByName(ctx, name); err == nil {
 		preview.ContainerID = cid
 	}
-	if state, err := m.podman.ContainerState(ctx, containerName); err == nil {
+	if state, err := m.podman.ContainerState(ctx, name); err == nil {
 		preview.ContainerState = state
 	} else {
 		preview.ContainerState = "absent"
@@ -337,8 +363,7 @@ func (m *Manager) Delete(ctx context.Context, workDir, id string) error {
 
 	// Remove the container if it exists. Use FindByName so an absent
 	// container is not an error.
-	name := "data-toolbox-mcp-" + id
-	containerID, err := m.podman.FindByName(ctx, name)
+	containerID, err := m.podman.FindByName(ctx, containerName(workDir, id))
 	if err != nil {
 		return err
 	}
@@ -348,10 +373,8 @@ func (m *Manager) Delete(ctx context.Context, workDir, id string) error {
 		}
 	}
 
-	// Drop from the in-memory map.
-	m.mu.Lock()
-	delete(m.workspaces, id)
-	m.mu.Unlock()
+	// Drop the cached handle: it names the container that was just removed.
+	m.forget(workDir, id)
 
 	// Wipe disk state.
 	if err := os.RemoveAll(cleaned); err != nil {

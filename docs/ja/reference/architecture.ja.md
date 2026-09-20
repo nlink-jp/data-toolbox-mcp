@@ -127,7 +127,8 @@
 3. 各候補について:
    - last_used: <work_dir>/<id>/work/analysis.duckdb の mtime
                 (なければディレクトリ自体の mtime)
-   - container_state: podman ps -a --filter name=data-toolbox-mcp-<id> --format {{.State}}
+   - container_state: podman ps -a --filter 'name=^data-toolbox-mcp-<id>-<work_dir のダイジェスト>$' --format {{.State}}
+     （アンカー必須: podman は `name=` をアンカー無しの正規表現として読むため、素の名前はより長い id や別 work_dir の同じ id にも一致する）
                       → "running" / "stopped" / "absent" に正規化
 4. {workspaces: [{id, last_used, container_state, host_work_dir}]} を返却
    - host_work_dir = filepath.Join(work_dir, id, "work")
