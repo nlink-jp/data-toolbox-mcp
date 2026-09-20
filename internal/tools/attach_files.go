@@ -92,6 +92,19 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 
 	hostWorkDir := filepath.Join(workDir, args.WorkspaceID, "work")
 
+	// Every read below goes through this root, never through the path. The
+	// lexical check in resolveWorkPath cannot see a symlink, and /work is
+	// writable by the code execute_code runs: a link there, followed on the
+	// host, handed the model any file this process can read — past the
+	// credential blacklist load_data applies to the same kind of path. An
+	// os.Root refuses a path that leaves it, links included, in the kernel's
+	// terms rather than ours. A workspace that was never ensured has no work
+	// directory; its files are reported missing, as before.
+	root, rootErr := os.OpenRoot(hostWorkDir)
+	if rootErr == nil {
+		defer func() { _ = root.Close() }()
+	}
+
 	maxSingle := cfg.Attach.MaxSingleSizeBytes
 	if maxSingle <= 0 {
 		maxSingle = 10 * 1024 * 1024
@@ -121,7 +134,22 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 		}
 		rep.HostPath = absPath
 
-		fi, err := os.Stat(absPath)
+		rel, _ := filepath.Rel(filepath.Clean(hostWorkDir), absPath)
+		var fi os.FileInfo
+		err := rootErr
+		if err == nil {
+			fi, err = root.Stat(rel)
+		}
+		if err != nil && !os.IsNotExist(err) {
+			rep.Status = "rejected"
+			rep.Reason = "not readable inside the workspace /work: " + err.Error()
+			blocks = append(blocks, mcpserver.ContentBlock{
+				Type: "text",
+				Text: fmt.Sprintf("rejected: %s — %s\n", p, rep.Reason),
+			})
+			reports = append(reports, rep)
+			continue
+		}
 		if err != nil {
 			rep.Status = "missing"
 			rep.Reason = err.Error()
@@ -170,7 +198,7 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 
 		switch rep.Kind {
 		case "image":
-			data, err := os.ReadFile(absPath)
+			data, err := root.ReadFile(rel)
 			if err != nil {
 				rep.Status = "read_error"
 				rep.Reason = err.Error()
@@ -188,7 +216,7 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 			totalBytes += rep.Size
 			rep.Status = "attached"
 		case "text":
-			data, err := os.ReadFile(absPath)
+			data, err := root.ReadFile(rel)
 			if err != nil {
 				rep.Status = "read_error"
 				rep.Reason = err.Error()
@@ -207,7 +235,7 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 		case "metadata":
 			blocks = append(blocks, mcpserver.ContentBlock{
 				Type: "text",
-				Text: metadataText(absPath, fi, rep.Reason),
+				Text: metadataText(root, rel, absPath, fi, rep.Reason),
 			})
 			rep.Status = "metadata"
 		}
@@ -269,13 +297,13 @@ func resolveWorkPath(hostWorkDir, p string) (string, error) {
 	return full, nil
 }
 
-func metadataText(absPath string, fi os.FileInfo, reason string) string {
+func metadataText(root *os.Root, rel, absPath string, fi os.FileInfo, reason string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "file at %s\n", absPath)
 	fmt.Fprintf(&sb, "size: %d bytes\n", fi.Size())
 	fmt.Fprintf(&sb, "modified: %s\n", fi.ModTime().UTC().Format("2006-01-02T15:04:05Z"))
 	if fi.Size() <= attachSha256SizeLimit {
-		if sum, err := fileSha256(absPath); err == nil {
+		if sum, err := fileSha256(root, rel); err == nil {
 			fmt.Fprintf(&sb, "sha256: %s\n", sum)
 		}
 	} else {
@@ -287,8 +315,8 @@ func metadataText(absPath string, fi os.FileInfo, reason string) string {
 	return sb.String()
 }
 
-func fileSha256(absPath string) (string, error) {
-	f, err := os.Open(absPath)
+func fileSha256(root *os.Root, rel string) (string, error) {
+	f, err := root.Open(rel)
 	if err != nil {
 		return "", err
 	}

@@ -3,8 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
@@ -57,13 +56,8 @@ func ExecuteCode(ctx context.Context, mgr *workspace.Manager, cfg *config.Config
 		return nil, wrapWorkspaceErr(err)
 	}
 
-	codeDir := filepath.Join(w.HostWorkDir, "_code")
-	if err := os.MkdirAll(codeDir, 0o755); err != nil {
-		return nil, toolerr.Newf(toolerr.CodeWorkspaceFailed, "mkdir _code: %v", err)
-	}
 	name := "exec-" + randomHex() + ".py"
-	hostPath := filepath.Join(codeDir, name)
-	if err := os.WriteFile(hostPath, []byte(args.Code), 0o644); err != nil {
+	if err := writeInWork(w.HostWorkDir, "_code", name, strings.NewReader(args.Code)); err != nil {
 		return nil, toolerr.Newf(toolerr.CodeWorkspaceFailed, "write code: %v", err)
 	}
 

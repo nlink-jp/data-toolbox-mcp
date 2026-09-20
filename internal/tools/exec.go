@@ -5,8 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
@@ -18,13 +17,8 @@ import (
 // Temp files are intentionally retained for debugging; a Phase 2 TTL cleanup
 // is planned per architecture.md §3.3.
 func execScript(ctx context.Context, mgr *workspace.Manager, w *workspace.Workspace, cfg *config.Config, prefix, script string) (*workspace.ExecResult, error) {
-	codeDir := filepath.Join(w.HostWorkDir, "_code")
-	if err := os.MkdirAll(codeDir, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir _code: %w", err)
-	}
 	name := prefix + "-" + randomHex() + ".py"
-	hostPath := filepath.Join(codeDir, name)
-	if err := os.WriteFile(hostPath, []byte(script), 0o644); err != nil {
+	if err := writeInWork(w.HostWorkDir, "_code", name, strings.NewReader(script)); err != nil {
 		return nil, fmt.Errorf("write script: %w", err)
 	}
 	timeout := time.Duration(cfg.Container.Limits.TimeoutSeconds) * time.Second

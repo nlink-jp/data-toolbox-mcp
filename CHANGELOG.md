@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the delete failed on a multi-line "ID". `dry_run` reported the same wrong
   container. The name is now derived in one place and matched exactly.
 
+- **`attach_files` followed a symlink out of the workspace.** Its path check was
+  lexical, and `/work` is writable by the code `execute_code` runs: a link left
+  there was followed on the host, and the target's content — or, for an
+  unrecognised extension, its size, mtime and SHA-256 — was returned. That went
+  past the credential blacklist `load_data` applies to the same kind of path.
+  The server's own writes had the mirror-image flaw: `load_data` (`_upload/`)
+  and `execute_code` (`_code/`) created their files by path, so a linked
+  directory or a link planted at the destination redirected the write to the
+  host, overwriting the target. All of these now go through an `os.Root` on the
+  work directory, which refuses a path that leaves it; links that stay inside
+  `/work` keep working. Requires Go 1.25 to build.
+
 ### Added
 
 - Tests that ask a podman which remembers its containers, instead of one that
@@ -32,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plus an opt-in run of the same question against the real podman
   (`DATA_TOOLBOX_TEST_PODMAN=1`), and a source check that keeps a second
   spelling of a workspace's identity from coming back.
+- Tests that plant the links sandboxed code could plant, and a source check
+  that refuses a path-based file call in `internal/tools`. Both source checks
+  carry a positive control.
 
 ## [0.6.3] - 2026-09-14
 

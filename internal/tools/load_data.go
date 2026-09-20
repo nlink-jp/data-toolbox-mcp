@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -57,13 +58,8 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 		return nil, wrapWorkspaceErr(err)
 	}
 
-	uploadDir := filepath.Join(w.HostWorkDir, "_upload")
-	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
-		return nil, toolerr.Newf(toolerr.CodeWorkspaceFailed, "mkdir _upload: %v", err)
-	}
-	dst := filepath.Join(uploadDir, filepath.Base(resolved))
-	if err := copyFile(resolved, dst); err != nil {
-		return nil, toolerr.Newf(toolerr.CodeWorkspaceFailed, "copy host file: %v", err)
+	if err := stageUpload(w.HostWorkDir, resolved); err != nil {
+		return nil, err
 	}
 
 	containerPath := "/work/_upload/" + filepath.Base(resolved)
@@ -71,21 +67,49 @@ func LoadData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, r
 		args.TableName, chooseReader(resolved), containerPath)
 }
 
-func copyFile(src, dst string) error {
+// stageUpload copies the host file src to <hostWorkDir>/_upload/<its name>,
+// where the container finds it as /work/_upload/<name>.
+//
+// The write goes through an os.Root on the work directory. /work is writable
+// by the code execute_code runs, so both _upload and the file inside it may be
+// symlinks that code left behind; a plain MkdirAll + Create followed them and
+// wrote the copy wherever they pointed on the host. A root refuses a path that
+// leaves it, in the kernel's terms.
+func stageUpload(hostWorkDir, src string) error {
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return toolerr.Newf(toolerr.CodeWorkspaceFailed, "copy host file: %v", err)
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
+	defer func() { _ = in.Close() }()
+	if err := writeInWork(hostWorkDir, "_upload", filepath.Base(src), in); err != nil {
+		return toolerr.Newf(toolerr.CodeWorkspaceFailed, "copy host file: %v", err)
+	}
+	return nil
+}
+
+// writeInWork is the only way this package writes into a workspace's work
+// directory: <hostWorkDir>/<dir>/<name>, through an os.Root, so neither dir nor
+// name can be a link that leads out. TestWorkspaceWritesGoThroughARoot keeps
+// the path-based calls from coming back.
+func writeInWork(hostWorkDir, dir, name string, content io.Reader) error {
+	root, err := os.OpenRoot(hostWorkDir)
+	if err != nil {
+		return fmt.Errorf("open work directory: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	if err := root.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	out, err := root.Create(filepath.Join(dir, name))
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := io.Copy(out, content); err != nil {
+		_ = out.Close()
 		return err
 	}
-	return nil
+	return out.Close()
 }
 
 // wrapWorkspaceErr surfaces ValidateID/Ensure errors with a structured code.
