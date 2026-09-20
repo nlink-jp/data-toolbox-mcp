@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host, overwriting the target. All of these now go through an `os.Root` on the
   work directory, which refuses a path that leaves it; links that stay inside
   `/work` keep working. Requires Go 1.25 to build.
+- `samples/README.md` told readers to add `[workspace] allowed_paths` to
+  `config.toml` — a key the server has refused to start with since 0.6.0. The
+  tool tables in both READMEs listed `work_dir` for one tool out of eight, and
+  the English architecture reference still said `workspace_dir`.
 
 ### Added
 

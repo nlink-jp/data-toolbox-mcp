@@ -97,15 +97,15 @@ default_row_limit = 20000
 
 | ツール | 引数 | 戻り値 |
 |------|------|------|
-| `load_data` | `workspace_id`, `file_path` (ホスト), `table_name` | `{rows_loaded, schema}` |
-| `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
-| `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
+| `load_data` | `work_dir`, `workspace_id`, `file_path` (ホスト), `table_name` | `{rows_loaded, schema}` |
+| `query_data` | `work_dir`, `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
+| `execute_code` | `work_dir`, `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
 | `list_workspaces` | `work_dir` | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — あなたの `work_dir` 配下の実在する workspace のみ。他のディレクトリは列挙しない |
-| `delete_workspace` | `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}` / `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
+| `delete_workspace` | `work_dir`, `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}` / `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
 | `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
-| `attach_files` | `workspace_id`, `paths: [string]` (1〜16、`/work/...` または相対) | MCP content 配列: summary text + 種別別 (image / text / metadata) ブロック |
-| `load_from_work` | `workspace_id`, `file_path` (`/work/...`), `table_name` | `{rows_loaded, schema}` |
-| `describe_workspace` | `workspace_id` | `{workspace_id, host_work_dir, container_state, tables: [{name, columns: [{name, type}]}]}` |
+| `attach_files` | `work_dir`, `workspace_id`, `paths: [string]` (1〜16、`/work/...` または相対) | MCP content 配列: summary text + 種別別 (image / text / metadata) ブロック |
+| `load_from_work` | `work_dir`, `workspace_id`, `file_path` (`/work/...`), `table_name` | `{rows_loaded, schema}` |
+| `describe_workspace` | `work_dir`, `workspace_id` | `{workspace_id, host_work_dir, container_state, tables: [{name, columns: [{name, type}]}]}` |
 
 `load_data` は拡張子で reader を選択（`.csv` → `read_csv_auto`、`.json` / `.jsonl` → `read_json_auto`、`.parquet` → `read_parquet`）。`query_data` は SQL に `LIMIT` がない場合 `LIMIT [query] default_row_limit`（既定 20000）を自動付加。`execute_code` は `language="python"` のみ受け付け（ADR-0003）、ランタイムコンテナには `duckdb` / `pandas` / `polars` / `pyarrow` / `matplotlib` / `Pillow` と `fonts-noto-cjk` (日本語ラベル描画用、ADR-0007) が同梱されています。セッション冒頭で `describe_runtime` を 1 回呼べば、利用可能なパッケージとフォントが分かります。
 

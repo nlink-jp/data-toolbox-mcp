@@ -131,7 +131,7 @@ Guards:
      (anchored: podman reads `name=` as an unanchored regex, so a bare name also matches longer ids and the same id under another work directory)
                       normalized to "running" / "stopped" / "absent"
 4. Returns {workspaces: [{id, last_used, container_state, host_work_dir}]}
-   - host_work_dir = filepath.Join(workspace_dir, id, "work")
+   - host_work_dir = filepath.Join(work_dir, id, "work")
 ```
 
 No `Ensure` needed (disk + podman only). No side effects on containers.
@@ -143,7 +143,7 @@ In v0.2.1 the per-item `host_work_dir` field was added (ADR-0006 amendment) so t
 ```
 1. MCP server validates workspace_id via workspace.ValidateID
 2. Defense-in-depth: re-verify via filepath.Clean that the computed
-   <workspace_dir>/<id> is a direct child of <workspace_dir>
+   <work_dir>/<id> is a direct child of <work_dir>
 3. dry_run = true (v0.4.0):
    - podman.FindByName + ContainerState
    - Compute host_paths and disk_usage_bytes (walked from the directory tree)
@@ -152,7 +152,7 @@ In v0.2.1 the per-item `host_work_dir` field was added (ADR-0006 amendment) so t
    - podman.FindByName looks up the container
    - If present, podman rm -f
    - Remove from in-memory Manager.workspaces map
-   - os.RemoveAll(<workspace_dir>/<id>/) wipes the disk state
+   - os.RemoveAll(<work_dir>/<id>/) wipes the disk state
    - Return {deleted: true, workspace_id}
 ```
 
@@ -243,7 +243,7 @@ type Workspace struct {
 ### 4.2 Disk (persistent)
 
 ```
-<workspace_dir>/
+<work_dir>/
 └── <workspace_id>/
     ├── analysis.duckdb       # DuckDB data file (mounted at /work/analysis.duckdb inside the container)
     └── work/                 # mounted at /work inside the container
@@ -258,7 +258,7 @@ Per the `feedback_in_memory_disk_sync` memory, all state syncing **goes through 
 
 - `ensure(workspace_id)` will:
   1. Look up the in-memory map
-  2. If absent, check `<workspace_dir>/<workspace_id>/` on disk
+  2. If absent, check `<work_dir>/<workspace_id>/` on disk
   3. If the directory exists, reattach the DuckDB file and ask Podman for the ContainerID
   4. If the directory is absent, create it and `podman run` a new container
 - The server does not eagerly load existing disk state at startup (lazy: only touched at ensure time)

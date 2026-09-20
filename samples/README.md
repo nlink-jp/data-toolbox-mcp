@@ -8,18 +8,13 @@
 | `products.json` | 10 | product_id, name, category, cost |
 | `logs.jsonl` | 40 | timestamp, level, service, request_id, duration_ms, path |
 
-## このディレクトリを allowed_paths に追加する
+## 設定は要らない
 
-`~/.config/data-toolbox-mcp/config.toml` の `[workspace] allowed_paths` に絶対パスを足してください:
+`load_data` に渡すのはサンプルファイルの**絶対パス**だけで、事前の許可設定は無い。資格情報とエージェント制御ディレクトリを除き、サーバーが読める絶対パスはそのまま読める（ADR-0011）。
 
-```toml
-allowed_paths = [
-    "/Users/you/src/data-toolbox-mcp/samples",
-    "~/Downloads",
-]
-```
+`[workspace] allowed_paths` と `workspace_dir` は v0.6.0 で廃止された。**config.toml に残っているとサーバーは起動を拒否する**ので、以前この手順で足した行は消すこと。
 
-Claude Desktop を再起動して設定を反映。
+すべてのツール呼び出しは `work_dir`（呼び出し側が読み戻せる絶対パス）を取り、workspace は `<work_dir>/<workspace_id>/` に作られる。
 
 ## 試したいプロンプト例
 
@@ -101,7 +96,7 @@ Claude Desktop を再起動して設定を反映。
 
 期待動作 (v0.2.1):
 - `execute_code` で matplotlib を使った日本語タイトル付きグラフを生成 (UserWarning なし — ADR-0007 の matplotlibrc 設定の効果)
-- 戻り値の `host_work_dir` フィールド (例: `/Users/you/.data-toolbox/samples/work/`) を見て、LLM が「`{host_work_dir}sales.png` に保存しました」とユーザーに具体的なホスト側パスを案内する
+- 戻り値の `host_work_dir` フィールド (例: `<work_dir>/samples/work/`) を見て、LLM が「`{host_work_dir}sales.png` に保存しました」とユーザーに具体的なホスト側パスを案内する
 - **base64 で PNG を埋め込んで返すのは間違い** — `describe_runtime` の notes (`ARTIFACT EXCHANGE` 説明) でも明確に禁じている (v0.2.1 amendment)
 
 ### Stage 10: 画像のインライン返却 (v0.3.0 / ADR-0008)
@@ -126,7 +121,7 @@ v0.2.1 では「ホストのパスを伝える」までだったが、v0.3.0 で
 
 期待動作:
 - `execute_code` で polars が CSV を `/work/` に書く
-- **従来は** `allowed_paths` に `~/.data-toolbox/<id>/work` が含まれないため `load_data` で読めず、Python 内で `duckdb.read_csv_auto` するしかなかった
+- `load_data` はホスト側のファイルをサンドボックスへコピーする道具で、サンドボックス内で生まれたファイルには `load_from_work` を使う（v0.3.0 より前は Python 内で `duckdb.read_csv_auto` するしかなかった）
 - **v0.3.0 では** `load_from_work(workspace_id="samples", file_path="/work/region_summary.csv", table_name="region_summary")` で直接 DuckDB の table 化できる
 - `query_data` で `SELECT * FROM region_summary ORDER BY total DESC LIMIT 3` を叩いて確認
 

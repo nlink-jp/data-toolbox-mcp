@@ -97,15 +97,15 @@ See [`config.example.toml`](config.example.toml) for the full schema. Full clien
 
 | Tool | Arguments | Returns |
 |------|-----------|---------|
-| `load_data` | `workspace_id`, `file_path` (host), `table_name` | `{rows_loaded, schema}` |
-| `query_data` | `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
-| `execute_code` | `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
+| `load_data` | `work_dir`, `workspace_id`, `file_path` (host), `table_name` | `{rows_loaded, schema}` |
+| `query_data` | `work_dir`, `workspace_id`, `sql` | `{rows, row_count, limit_applied, limit_reached, truncated, total, total_unavailable_reason?}` |
+| `execute_code` | `work_dir`, `workspace_id`, `language: "python"`, `code` | `{stdout, stderr, exit_code, host_work_dir}` |
 | `list_workspaces` | `work_dir` | `{workspaces: [{id, last_used, container_state, host_work_dir}]}` — only real workspaces under your `work_dir`; other directories are skipped |
-| `delete_workspace` | `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}`; `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
+| `delete_workspace` | `work_dir`, `workspace_id`, `dry_run?` | `dry_run=false`: `{deleted, workspace_id}`; `dry_run=true`: `{would_delete, container_id, container_state, host_paths, disk_usage_bytes}` |
 | `describe_runtime` | — | `{python_version, container_image, packages, fonts, network, mount_points, notes}` |
-| `attach_files` | `workspace_id`, `paths: [string]` (1–16, `/work/...` or relative) | MCP content array: summary text + image / text / metadata blocks per file |
-| `load_from_work` | `workspace_id`, `file_path` (`/work/...`), `table_name` | `{rows_loaded, schema}` |
-| `describe_workspace` | `workspace_id` | `{workspace_id, host_work_dir, container_state, tables: [{name, columns: [{name, type}]}]}` |
+| `attach_files` | `work_dir`, `workspace_id`, `paths: [string]` (1–16, `/work/...` or relative) | MCP content array: summary text + image / text / metadata blocks per file |
+| `load_from_work` | `work_dir`, `workspace_id`, `file_path` (`/work/...`), `table_name` | `{rows_loaded, schema}` |
+| `describe_workspace` | `work_dir`, `workspace_id` | `{workspace_id, host_work_dir, container_state, tables: [{name, columns: [{name, type}]}]}` |
 
 `load_data` infers the reader from the file extension (`.csv` → `read_csv_auto`, `.json` / `.jsonl` → `read_json_auto`, `.parquet` → `read_parquet`). `query_data` auto-appends `LIMIT [query] default_row_limit` (default 20000) when the SQL has no `LIMIT`. `execute_code` only accepts `language="python"` in this version (ADR-0003); the runtime container ships with `duckdb`, `pandas`, `polars`, `pyarrow`, `matplotlib`, and `Pillow`, plus `fonts-noto-cjk` so Japanese matplotlib labels render without setup (ADR-0007). Call `describe_runtime` once at session start to inspect what's actually available.
 
