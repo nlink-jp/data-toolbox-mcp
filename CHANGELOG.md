@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the registered tools, and with an empty list every one of them passed without
   examining anything.
 
+### Documentation
+
+- The README's tool list gives each tool's `work_dir` argument (every tool but
+  `describe_runtime` requires it), and its feature list says nine tools, not three.
+
 ## [0.6.5] - 2026-09-21
 
 ### Security

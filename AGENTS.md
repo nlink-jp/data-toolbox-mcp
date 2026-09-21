@@ -50,7 +50,7 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - **ADR-0007**: Runtime image is `python:3.12-slim` + `fonts-noto-cjk` + matplotlib + Pillow with `Noto Sans CJK JP` first in `font.sans-serif` (matplotlib Agg has no per-glyph fallback). Image budget < 900MB.
 - **ADR-0008**: `attach_files` returns workspace `/work` files as MCP image/text/metadata content blocks. Extension-based dispatch, per-file 10 MiB / cumulative 20 MiB caps (configurable via `[attach]`), path-traversal defense-in-depth.
 - **ADR-0009**: `load_from_work` table-izes a `/work/<sub>` file directly (the file is already in the sandbox). `file_path` must start with `/work/`.
-- **ADR-0011**: Every tool takes a required `work_dir`; the workspace is `<work_dir>/<workspace_id>/`, so `host_work_dir` is a path the caller can open. `workspace_dir` and `allowed_paths` are removed — `load_data` is guarded by a fixed credential blacklist, and the container name carries a digest of the work dir.
+- **ADR-0011**: Every tool except `describe_runtime` takes a required `work_dir`; the workspace is `<work_dir>/<workspace_id>/`, so `host_work_dir` is a path the caller can open. `workspace_dir` and `allowed_paths` are removed — `load_data` is guarded by a fixed credential blacklist, and the container name carries a digest of the work dir.
 - **ADR-0010** (v0.4.0): UX polish — `describe_workspace` (table+columns), `query_data` returns `truncated/total` + table-not-found hint in `details`, `delete_workspace` accepts `dry_run: true` for preview, four tool descriptions gain a one-line hint.
 
 ## Gotchas

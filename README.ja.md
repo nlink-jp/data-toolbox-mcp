@@ -4,15 +4,15 @@
 
 `data-toolbox-mcp` は任意の MCP クライアント（Claude Desktop, Cursor 等）が、workspace 単位の DuckDB にデータをロードし、SQL や Python を Podman サンドボックス内で実行できるようにする MCP サーバーです。公開するツールは 9 つ:
 
-- `load_data(workspace_id, file_path, table_name)`
-- `query_data(workspace_id, sql)` — 自動 LIMIT 時は `truncated` + `total` を返す (v0.4.0)
-- `execute_code(workspace_id, language, code)`
-- `list_workspaces()` — セッションを跨いで過去の workspace を発見
-- `delete_workspace(workspace_id, dry_run?)` — 既定で不可逆。`dry_run: true` で削除予定情報のみ返す (v0.4.0)
+- `load_data(work_dir, workspace_id, file_path, table_name)`
+- `query_data(work_dir, workspace_id, sql)` — 自動 LIMIT 時は `truncated` + `total` を返す (v0.4.0)
+- `execute_code(work_dir, workspace_id, language, code)`
+- `list_workspaces(work_dir)` — セッションを跨いで過去の workspace を発見
+- `delete_workspace(work_dir, workspace_id, dry_run?)` — 既定で不可逆。`dry_run: true` で削除予定情報のみ返す (v0.4.0)
 - `describe_runtime()` — コンテナの同梱機能 (python / パッケージ / フォント / network) を開示
-- `attach_files(workspace_id, paths)` — `/work` 内ファイルを MCP の画像 / テキストコンテンツとして返却 (v0.3.0)
-- `load_from_work(workspace_id, file_path, table_name)` — `/work` 内ファイルを直接 DuckDB table 化 (v0.3.0)
-- `describe_workspace(workspace_id)` — workspace 内の全 table の column スキーマを 1 ツールで返却 (v0.4.0)
+- `attach_files(work_dir, workspace_id, paths)` — `/work` 内ファイルを MCP の画像 / テキストコンテンツとして返却 (v0.3.0)
+- `load_from_work(work_dir, workspace_id, file_path, table_name)` — `/work` 内ファイルを直接 DuckDB table 化 (v0.3.0)
+- `describe_workspace(work_dir, workspace_id)` — workspace 内の全 table の column スキーマを 1 ツールで返却 (v0.4.0)
 
 LLM プロバイダーには一切依存しません。stdio で素の MCP プロトコルを話すだけです。
 
@@ -24,7 +24,7 @@ LLM プロバイダーには一切依存しません。stdio で素の MCP プ�
 
 ## 機能
 
-- **3 ツール** で load → query → analyze のループをカバー
+- **9 ツール** で load → query → analyze のループをカバー。`describe_runtime` 以外のツールは必須の `work_dir` を取り、workspace は `<work_dir>/<workspace_id>/` になる
 - **workspace_id スコープ**: 各 workspace がコンテナ 1 つと DuckDB ファイル 1 つを所有。サーバー再起動を跨いで永続。([ADR-0001](docs/ja/adr/0001-workspace-id-lifecycle.ja.md))
 - **Podman サンドボックス**: 既定で `network=none`、CPU / memory / timeout 上限を config で調整可能。([ADR-0002](docs/ja/adr/0002-podman-engine-choice.ja.md))
 - **Python ランタイム**（`duckdb`, `pandas`, `polars`, `pyarrow` 同梱）([ADR-0003](docs/ja/adr/0003-python-only-runtime.ja.md))

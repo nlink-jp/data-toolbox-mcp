@@ -4,15 +4,15 @@
 
 `data-toolbox-mcp` lets any MCP client (Claude Desktop, Cursor, ...) load tabular data into a per-workspace DuckDB and run SQL or Python against it inside a Podman sandbox. Nine tools are exposed:
 
-- `load_data(workspace_id, file_path, table_name)`
-- `query_data(workspace_id, sql)` — auto-LIMIT returns `truncated` + `total` (v0.4.0)
-- `execute_code(workspace_id, language, code)`
-- `list_workspaces()` — discover prior workspaces across sessions
-- `delete_workspace(workspace_id, dry_run?)` — irreversible by default; `dry_run: true` shows what would be removed (v0.4.0)
+- `load_data(work_dir, workspace_id, file_path, table_name)`
+- `query_data(work_dir, workspace_id, sql)` — auto-LIMIT returns `truncated` + `total` (v0.4.0)
+- `execute_code(work_dir, workspace_id, language, code)`
+- `list_workspaces(work_dir)` — discover prior workspaces across sessions
+- `delete_workspace(work_dir, workspace_id, dry_run?)` — irreversible by default; `dry_run: true` shows what would be removed (v0.4.0)
 - `describe_runtime()` — what the container ships (python, packages, fonts, network)
-- `attach_files(workspace_id, paths)` — return `/work` files as inline MCP image / text content
-- `load_from_work(workspace_id, file_path, table_name)` — table-ize a file already in `/work`
-- `describe_workspace(workspace_id)` — every table's column schema in the workspace (v0.4.0)
+- `attach_files(work_dir, workspace_id, paths)` — return `/work` files as inline MCP image / text content
+- `load_from_work(work_dir, workspace_id, file_path, table_name)` — table-ize a file already in `/work`
+- `describe_workspace(work_dir, workspace_id)` — every table's column schema in the workspace (v0.4.0)
 
 The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to any LLM provider itself.
 
@@ -24,7 +24,7 @@ The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to an
 
 ## Features
 
-- **Three MCP tools** for the load → query → analyze loop.
+- **Nine MCP tools** for the load → query → analyze loop. Every tool except `describe_runtime` takes a required `work_dir`: the workspace is `<work_dir>/<workspace_id>/`.
 - **workspace_id scoping**: each workspace owns one container and one DuckDB file; state persists across server restarts. ([ADR-0001](docs/en/adr/0001-workspace-id-lifecycle.md))
 - **Podman sandbox** with `network=none` by default; CPU / memory / timeout caps configurable. ([ADR-0002](docs/en/adr/0002-podman-engine-choice.md))
 - **Python runtime** (`duckdb`, `pandas`, `polars`, `pyarrow` bundled). ([ADR-0003](docs/en/adr/0003-python-only-runtime.md))
