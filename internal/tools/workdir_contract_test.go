@@ -19,7 +19,13 @@ func registeredTools(t *testing.T) []mcpserver.Tool {
 		transport.NewStdioTransport(strings.NewReader(""), io.Discard), nil)
 	cfg := config.Default()
 	Register(srv, workspace.NewManager(cfg, workspace.NewPodmanClient()), cfg)
-	return srv.Tools()
+	tools := srv.Tools()
+	// The floor under every per-tool loop: with no tools registered, each
+	// contract would pass without having examined anything.
+	if len(tools) == 0 {
+		t.Fatal("no tools are registered, so every per-tool contract would pass without examining one")
+	}
+	return tools
 }
 
 // The work-directory contract (organization ADR-021, project ADR-0011) is a
