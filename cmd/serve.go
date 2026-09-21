@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -43,12 +44,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		defer logFile.Close()
 	}
 
-	tr := transport.NewStdioTransport(os.Stdin, os.Stdout)
-	srv := mcpserver.New("data-toolbox-mcp", Version, tr, logger)
-
-	pc := workspace.NewPodmanClient()
-	mgr := workspace.NewManager(cfg, pc)
-	tools.Register(srv, mgr, cfg)
+	mgr := workspace.NewManager(cfg, workspace.NewPodmanClient())
+	srv := newServer(transport.NewStdioTransport(os.Stdin, os.Stdout), logger, mgr, cfg)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -67,6 +64,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return nil
+}
+
+// newServer builds the MCP server that serve runs: the initialize-time
+// instructions and every tool. It is the only place in this package that
+// constructs one, so a test that drives it sees what the binary answers.
+func newServer(tr *transport.StdioTransport, logger *slog.Logger, mgr *workspace.Manager, cfg *config.Config) *mcpserver.Server {
+	srv := mcpserver.New("data-toolbox-mcp", Version, tr, logger)
+	srv.SetInstructions(tools.Instructions)
+	tools.Register(srv, mgr, cfg)
+	return srv
 }
 
 // resolveConfig loads explicit path if given, otherwise searches standard

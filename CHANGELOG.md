@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The server now sends MCP `instructions` at initialize.** Clients hand this
+  text to their model before any tool list. It says what the server is for,
+  that every tool except `describe_runtime` takes a required `work_dir` (an
+  absolute path the caller can read back, no default, must already exist),
+  that the workspace is `<work_dir>/<workspace_id>/` and holds everything the
+  server writes, including the DuckDB file and what `execute_code` writes to
+  `/work`, and to call `describe_runtime` once at session start. Tests pin
+  each claim against the registered tools: the contract terms, the tools that
+  take no `work_dir`, that every tool or argument name it uses exists, that no
+  retired work-dir name appears, and that the served binary actually sets it.
+
 ### Fixed
 
 - **`make verify-release` now fails closed.** Its last block chained unzip, the

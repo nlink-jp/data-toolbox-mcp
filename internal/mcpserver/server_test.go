@@ -82,6 +82,63 @@ func TestBasicRoundTrip(t *testing.T) {
 	}
 }
 
+// initializeResponse drives one initialize request through a server that
+// register prepares, and returns the raw response line.
+func initializeResponse(t *testing.T, register func(*Server)) string {
+	t.Helper()
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
+	var out bytes.Buffer
+	srv := New("data-toolbox-mcp", "test", transport.NewStdioTransport(in, &out), nil)
+	if register != nil {
+		register(srv)
+	}
+	if err := srv.Serve(context.Background()); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	lines := splitLines(out.String())
+	if len(lines) != 1 {
+		t.Fatalf("want 1 response line, got %d:\n%s", len(lines), out.String())
+	}
+	return lines[0]
+}
+
+// The initialize result is where a client picks up the hint it hands its
+// model before any tool list, so what SetInstructions stores has to arrive
+// there verbatim.
+func TestInitializeCarriesTheInstructions(t *testing.T) {
+	const hint = "call describe_runtime first"
+	line := initializeResponse(t, func(s *Server) { s.SetInstructions(hint) })
+	var resp struct {
+		Result struct {
+			Instructions string `json:"instructions"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(line), &resp); err != nil {
+		t.Fatalf("initialize response is not JSON: %v\n%s", err, line)
+	}
+	if resp.Result.Instructions != hint {
+		t.Errorf("instructions = %q, want %q", resp.Result.Instructions, hint)
+	}
+}
+
+// A server that sets no instructions must not advertise an empty string: the
+// field is optional in MCP, and an empty hint is noise in the model's context.
+func TestInitializeOmitsInstructionsWhenNoneAreSet(t *testing.T) {
+	line := initializeResponse(t, nil)
+	var resp struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(line), &resp); err != nil {
+		t.Fatalf("initialize response is not JSON: %v\n%s", err, line)
+	}
+	if resp.Result == nil {
+		t.Fatalf("initialize response has no result: %s", line)
+	}
+	if raw, present := resp.Result["instructions"]; present {
+		t.Errorf("initialize result carries instructions %s although none were set", raw)
+	}
+}
+
 // TestParseError checks that malformed JSON gets a parse-error response with id=null.
 func TestParseError(t *testing.T) {
 	in := bytes.NewBufferString("not-json\n")

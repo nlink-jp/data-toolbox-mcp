@@ -39,6 +39,8 @@ type Server struct {
 	handlers  map[string]ToolHandler
 	transport *transport.StdioTransport
 	logger    *slog.Logger
+	// instructions is returned in the initialize result; see SetInstructions.
+	instructions string
 }
 
 // New creates a server bound to the given transport.

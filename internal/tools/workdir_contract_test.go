@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -99,6 +100,61 @@ func TestEveryRequiredNameIsDeclared(t *testing.T) {
 				t.Errorf("tool %q requires %q but does not declare it in properties: "+
 					"a strict client refuses the whole tool list", tool.Name, name)
 			}
+		}
+	}
+}
+
+// The initialize instructions are the first thing the model reads about this
+// server — before any tool list — so the contract has to be stated there in
+// the terms the schemas use, or a model that reads only this omits an
+// argument nearly every tool requires.
+func TestInstructionsNameTheWorkDirContract(t *testing.T) {
+	for _, want := range []string{"work_dir", "absolute", "required", "no default", "<work_dir>/<workspace_id>/"} {
+		if !strings.Contains(Instructions, want) {
+			t.Errorf("the initialize instructions do not mention %q", want)
+		}
+	}
+}
+
+func TestInstructionsCarryNoRetiredWorkDirName(t *testing.T) {
+	for _, old := range retiredWorkDirNames {
+		if strings.Contains(Instructions, old) {
+			t.Errorf("the initialize instructions name %q; the name is work_dir", old)
+		}
+	}
+}
+
+// exceptClause is the sentence in which the instructions say which tools do
+// not take work_dir.
+var exceptClause = regexp.MustCompile(`Every tool except ([a-z_]+(?:(?:, | and )[a-z_]+)*) takes work_dir`)
+
+// "Every tool except X takes work_dir" is a claim about the schemas, and it
+// goes false silently: a tool added without work_dir, or X gaining one,
+// changes the schemas and leaves the sentence as it was. The exceptions it
+// names must be exactly the registered tools that declare no work_dir.
+func TestInstructionsNameEveryToolThatTakesNoWorkDir(t *testing.T) {
+	m := exceptClause.FindStringSubmatch(Instructions)
+	if m == nil {
+		t.Fatalf("the instructions no longer say which tools take work_dir in the form %q", exceptClause)
+	}
+	claimed := map[string]bool{}
+	for _, name := range regexp.MustCompile(`, | and `).Split(m[1], -1) {
+		claimed[name] = true
+	}
+	actual := map[string]bool{}
+	for _, tool := range registeredTools(t) {
+		if !declaredProperties(t, tool)["work_dir"] {
+			actual[tool.Name] = true
+		}
+	}
+	for name := range actual {
+		if !claimed[name] {
+			t.Errorf("tool %q declares no work_dir, but the instructions say every tool except %s takes one", name, m[1])
+		}
+	}
+	for name := range claimed {
+		if !actual[name] {
+			t.Errorf("the instructions name %q as taking no work_dir, but no registered tool by that name lacks one", name)
 		}
 	}
 }
