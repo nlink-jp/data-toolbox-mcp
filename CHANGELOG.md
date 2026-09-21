@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **`work_dir` may no longer be this server's own config directory.**
+  Organization ADR-021 §4 closes the work-directory checks with "not a system
+  location … and not the server's own config or state directory" →
+  `work_dir_denied`, and the resolver has carried a `Denied` list for exactly
+  that — but each of the eight work-directory-taking tools built its own
+  `workdir.Resolver{}`, so all eight ran with the list empty. A caller could
+  pass `work_dir = ~/.config/data-toolbox-mcp` and get `load_data` to
+  bind-mount that directory into a container, `execute_code` to run arbitrary
+  Python with it writable, and `delete_workspace` to remove a subtree of it —
+  against the file that sets this server's own container limits, on a model's
+  say-so. `~/.config/data-toolbox-mcp` and everything under it is now refused.
+- The eight literals are gone: every tool now calls one `resolveWorkDir`, and
+  `TestOnlyOnePlaceConstructsAResolver` walks the package's syntax trees and
+  fails on a `workdir.Resolver` literal written anywhere else, so the next
+  tool cannot reintroduce the defect by copying its neighbour. The denied path
+  comes from `config.Dir()`, the same expression `serve` and `doctor` search
+  through `config.SearchPaths()` — one spelling instead of the three that
+  existed.
+
 ## [0.6.4] - 2026-09-21
 
 ### Fixed

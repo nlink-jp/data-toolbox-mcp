@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -131,16 +130,13 @@ func checkConfig(out io.Writer, ok *bool) {
 	fmt.Fprintln(out, "       image=", cfg.Container.Image)
 }
 
-// findConfigPath mirrors resolveConfig's search order from cmd/serve.go.
+// findConfigPath resolves the config file the way `serve` does — the same
+// config.SearchPaths, not a second copy of the order.
 func findConfigPath() string {
 	if configPath != "" {
 		return configPath
 	}
-	home, _ := os.UserHomeDir()
-	for _, c := range []string{
-		filepath.Join(home, ".config", "data-toolbox-mcp", "config.toml"),
-		"config.toml",
-	} {
+	for _, c := range config.SearchPaths() {
 		if _, err := os.Stat(c); err == nil {
 			return c
 		}

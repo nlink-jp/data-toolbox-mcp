@@ -94,6 +94,31 @@ func Default() *Config {
 	}
 }
 
+// Dir is the conventional directory holding this server's own config.toml.
+// Empty when the home directory cannot be determined.
+//
+// It is one expression on purpose. Three places need it — the server's config
+// search, `doctor`'s, and the work-directory denial that refuses this server's
+// own config directory as a caller's workspace root (organization ADR-021 §4)
+// — and a path spelled three times is a denial that drifts away from the
+// location it was meant to protect.
+func Dir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "data-toolbox-mcp")
+}
+
+// SearchPaths lists the config files consulted, in order, when no path is
+// given explicitly.
+func SearchPaths() []string {
+	if dir := Dir(); dir != "" {
+		return []string{filepath.Join(dir, "config.toml"), "config.toml"}
+	}
+	return []string{"config.toml"}
+}
+
 // Load reads and decodes the config file. Unknown keys are rejected.
 // Missing fields keep the values from Default().
 func Load(path string) (*Config, error) {

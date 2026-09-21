@@ -6,7 +6,6 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
-	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
@@ -30,7 +29,7 @@ func ListWorkspaces(ctx context.Context, mgr *workspace.Manager, _ *config.Confi
 			return nil, toolerr.Newf(toolerr.CodeInvalidArguments, "invalid arguments: %v", err)
 		}
 	}
-	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	workDir, err := resolveWorkDir(ctx, args.WorkDir)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/mcpserver"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
-	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
@@ -75,7 +74,7 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 	if args.WorkspaceID == "" {
 		return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_id is required")
 	}
-	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	workDir, err := resolveWorkDir(ctx, args.WorkDir)
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
@@ -76,11 +75,7 @@ func resolveConfig(explicit string) (*config.Config, error) {
 	if explicit != "" {
 		return config.Load(explicit)
 	}
-	home, _ := os.UserHomeDir()
-	for _, c := range []string{
-		filepath.Join(home, ".config", "data-toolbox-mcp", "config.toml"),
-		"config.toml",
-	} {
+	for _, c := range config.SearchPaths() {
 		if _, err := os.Stat(c); err == nil {
 			return config.Load(c)
 		} else if !errors.Is(err, os.ErrNotExist) {

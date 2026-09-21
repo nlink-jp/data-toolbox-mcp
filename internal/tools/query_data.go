@@ -9,7 +9,6 @@ import (
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
-	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
@@ -51,7 +50,7 @@ func QueryData(ctx context.Context, mgr *workspace.Manager, cfg *config.Config, 
 		return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_id and sql are required")
 	}
 
-	workDir, err := workdir.Resolver{}.Resolve(ctx, args.WorkDir)
+	workDir, err := resolveWorkDir(ctx, args.WorkDir)
 	if err != nil {
 		return nil, err
 	}
