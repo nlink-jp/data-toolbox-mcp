@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-13
-- Amends: [ADR-0006](0006-workspace-lifecycle.ja.md) 相当のワークスペース所在（`workspace_dir` 配下）と、`allowed_paths` による入力制限
+- Amends: [ADR-0001](0001-workspace-id-lifecycle.ja.md) のワークスペース所在（`workspace_dir` 配下）と、`allowed_paths` による入力制限
 
 ## Context
 

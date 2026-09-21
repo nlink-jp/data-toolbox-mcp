@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-13
-- Amends: the workspace location (under `workspace_dir`) and the `allowed_paths` input guard
+- Amends: the workspace location (under `workspace_dir`) decided in [ADR-0001](0001-workspace-id-lifecycle.md), and the `allowed_paths` input guard
 
 ## Context
 
