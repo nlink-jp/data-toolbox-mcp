@@ -61,6 +61,30 @@ ADR-0011 以来、`work_dir` の検証と、読み取りのブラックリスト
 `tools.WorkspaceCheck` を渡し、配線は `newWorkspaceManager` 1 か所。判定の無い Manager はすべてのワークスペースを
 拒む。pathguard v0.2.0 は NUL バイトを含むパスも拒む。
 
+## Amendment (2026-09-22, v0.8.1): ファイルの有無で答えを変えない
+
+`load_data` の `file_path` は `filepath.EvalSymlinks` で解決してから床に掛けていた。そのため資格情報の位置に
+あるファイルは、あれば `path_not_allowed`、無ければ `invalid_arguments` になり、答えがどの秘密が存在するかを
+呼び出し側に教えていた。`attach_files` は `/work` 内のファイルに床を掛けておらず、そこにある `.env` や、
+ワークスペースがその同期フォルダ内にあるときの `~/.ssh` 内のリンクの行き先を、あれば返していた。
+slack-mcp-extender と chrome-pilot-mcp の独立レビューで見つかった型で、ここでは HOME を一時ディレクトリにした
+テストで実測した（`load_data` は 7 組すべて、`attach_files` は 4 組中 2 組で答えが違った。仕掛けたリンクで
+外へ出る 2 組は `os.Root` が存在に関係なく拒んでいた）。
+
+- `ResolveInput` はまず置き場所を決め（`workdir.Where` = pathguard の `Forms` の末尾。リンクはすべて辿り、
+  宙に浮いたリンクはその先で。存在するパスなら `EvalSymlinks` と同じ）、渡された綴りと置き場所の両方で床に
+  掛けてから、置き場所に対して存在を問う（`EvalSymlinks(where)`）。解決先が置き場所と違えば（その間に
+  変わった）、そこでもう一度判定する。拒否の details の `resolved` は置き場所で、存在に左右されない。
+- `attach_files` は各パスをその置き場所で床に掛けてから `root.Stat` する。読むのは従来どおり `os.Root` 経由。
+- 解決できないパスに専用の分岐を作らない。
+- `TestExistenceIsNotRevealedByLoadData` と `…ByAttachFiles` は、同じパスをファイルがある状態と消した状態で
+  呼び、答え全体を比べる。変異（判定の順序を戻す・`attach_files` の床を外す・綴りから辿り直す・置き場所を
+  決めない）はすべてアサーションで落ちた。
+- 限界: `attach_files` の床は `/work` の境界ではない。`execute_code` は `/work` をすべて読めるので、保護された
+  場所を**含む**ワークスペース（`~/.ssh` 内のリンクが指す同期フォルダなど）はサンドボックスに見えたままになる。
+  資格情報ファイルへのハードリンクを別の場所に作った場合も、同一性で拒むのはそれが存在するときだけになる
+  （作れる者はすでにそのファイルに届いている）。
+
 ## References
 
 - 組織 ADR-021（ファイル渡し MCP サーバーの work dir 契約）

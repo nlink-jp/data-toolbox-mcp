@@ -15,6 +15,7 @@ import (
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/mcpserver"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/workdir"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
 )
 
@@ -132,6 +133,21 @@ func AttachFiles(ctx context.Context, _ *workspace.Manager, cfg *config.Config, 
 			continue
 		}
 		rep.HostPath = absPath
+
+		// The floor, at the file's place, before anything asks whether it is
+		// there: /work may hold a .env, or be the sync folder a link in
+		// ~/.ssh leads into, and "missing" against "refused" would say which
+		// exist. The root below still keeps every read inside /work.
+		if why := workdir.Sensitive(absPath, workdir.Where(absPath)); why != "" {
+			rep.Status = "rejected"
+			rep.Reason = "refused: " + why
+			blocks = append(blocks, mcpserver.ContentBlock{
+				Type: "text",
+				Text: fmt.Sprintf("rejected: %s — %s\n", p, rep.Reason),
+			})
+			reports = append(reports, rep)
+			continue
+		}
 
 		rel, _ := filepath.Rel(filepath.Clean(hostWorkDir), absPath)
 		var fi os.FileInfo

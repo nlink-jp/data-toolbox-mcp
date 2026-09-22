@@ -69,6 +69,34 @@ takes the judgement as a required argument, and `Ensure`, `PreviewDelete` and `D
 passes `tools.WorkspaceCheck`, wired once in `newWorkspaceManager`; a Manager without one refuses
 every workspace. pathguard v0.2.0 also refuses a path holding a NUL byte.
 
+## Amendment (2026-09-22, v0.8.1): whether a file exists never changes the answer
+
+A `load_data` `file_path` was resolved with `filepath.EvalSymlinks` before the floor judged it, so a
+file in a credential location got `path_not_allowed` when it was there and `invalid_arguments` when it
+was not — the answer told the caller which secrets exist. `attach_files` did not apply the floor to
+files in `/work` at all, and returned a `.env` there, or the target of a link in `~/.ssh` when the
+workspace lay in that sync folder, when present. It is the class the independent reviews of
+slack-mcp-extender and chrome-pilot-mcp found; here it was measured with the home directory redirected
+to a temporary one (all 7 `load_data` pairs and 2 of 4 `attach_files` pairs got different answers; the
+two planted links out of `/work` were refused by the `os.Root` whether or not their targets existed).
+
+- `ResolveInput` places the path first (`workdir.Where`, the last of pathguard's `Forms`: every link
+  followed, a dangling one by its target — for a path that exists, what `EvalSymlinks` returns), judges
+  it as given and as placed, and only then asks existence of the place (`EvalSymlinks(where)`). When it
+  resolves elsewhere than it was placed (it changed in between), it is judged again there. A refusal's
+  `details.resolved` is the place, which does not depend on existence.
+- `attach_files` judges each path at its place before `root.Stat`; reads still go through the
+  `os.Root`.
+- A path that does not resolve gets no branch of its own.
+- `TestExistenceIsNotRevealedByLoadData` and `…ByAttachFiles` call the same path while a file is there
+  and after it is removed and compare the whole answer. The mutations (the old order, the
+  `attach_files` floor removed, existence re-walked from the spelling, no placement) all fail by
+  assertion.
+- Limits: the floor on `attach_files` is not a boundary for `/work`. `execute_code` reads everything
+  there, so a workspace that *contains* a protected place (a sync folder a link in `~/.ssh` leads into)
+  stays visible to the sandbox. A hard link to a credential file made elsewhere is refused by identity
+  only while it exists; whoever can make one already reaches the file.
+
 ## References
 
 - Organization ADR-021 (the work-dir contract of the file-mediated MCP servers)

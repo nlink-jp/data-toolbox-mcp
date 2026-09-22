@@ -32,7 +32,7 @@ LLM プロバイダーには一切依存しません。stdio で素の MCP プ�
 - **レジストリ push なし** — ランタイム Dockerfile は `go:embed` でバイナリに同梱、初回利用時にローカル build。([ADR-0005](docs/ja/adr/0005-local-build-image-distribution.ja.md))
 - **単一バイナリ・単一バージョン**: `serve` / `build-runtime` / `doctor` / `version` のサブコマンドはすべて 1 バイナリ
 - **構造化ツールエラー**: すべてのツールエラーには LLM クライアントが分岐に使える安定した `code` が付く（`path_not_allowed`, `unsupported_language`, `script_failed`, ...）
-- **多層パス防御**: 資格情報ブラックリストは「渡された綴り」と `EvalSymlinks` 解決後の両方で照合するため、リンクによる jail-break も、`~/.ssh` 自体がリンクの場合の素通りも防ぐ
+- **多層パス防御**: 資格情報ブラックリストは「渡された綴り」と「リンクをすべて辿った行き先（宙に浮いたリンクはその先）」の両方で、ファイルがあるかを問う前に照合するため、リンクによる jail-break も、`~/.ssh` 自体がリンクの場合の素通りも防ぎ、答えからどの秘密が存在するかも分からない
 
 ## 必要環境
 
@@ -116,8 +116,8 @@ default_row_limit = 20000
 ## セキュリティモデル（要点）
 
 - 呼び出しは必ず `work_dir` — **あなたが読み戻せる**ディレクトリの絶対パス — を名指し、workspace は `<work_dir>/<workspace_id>/`。`execute_code` が `/work` に書いたファイルはそこに現れるので、結果の `host_work_dir` は開けるパスになる。`work_dir` は信用する前に検証される（絶対・実在・書込可、システム位置やホームそのもの、資格情報ディレクトリ、およびこのサーバー自身の設定ディレクトリ `~/.config/data-toolbox-mcp` はサブディレクトリ込みで拒否）
-- `load_data` はあなたが読めるファイルなら読む。例外は、ホームにある資格情報・エージェント制御の場所（`~/.ssh`、`~/.aws`、`~/.kube`、`~/.gnupg`、`~/.config/gcloud`、`~/.config/gh`、`~/.netrc`、`~/Library/Keychains`、`~/.claude`、`~/.codex` など、gem-agent と lagent が使う一覧）、それらのディレクトリの直下にあるリンクの指す先、ひな形（`.env.example`、`.env.sample`、`.env.template`、`.env.dist`）を除く任意の `.env`。大文字小文字の違い・リンク・渡されたままか解決後かを問わず、どんな綴りでも見つける（判定は [nlink-jp/pathguard](https://github.com/nlink-jp/pathguard) が行う）。これは床であって境界ではない
-- `/work` は `execute_code` が走らせるコードから書き込めるので、そこにある symlink はサンドボックスからの入力として扱う。サーバーは workspace のファイルに work ディレクトリの `os.Root` 経由でしか触れず、その root 自体も `work_dir` の root を通して開く: `attach_files` はリンク経由で外へ出るパス（および通常ファイル以外）を拒否し、サーバー自身の書き込み（`_upload/`・`_code/`）もリンクで行き先を変えられず、ディレクトリ自体がリンクになっている workspace はマウントする前に拒否する。`/work` の内側に留まるリンクは従来どおり使える。
+- `load_data` はあなたが読めるファイルなら読む。例外は、ホームにある資格情報・エージェント制御の場所（`~/.ssh`、`~/.aws`、`~/.kube`、`~/.gnupg`、`~/.config/gcloud`、`~/.config/gh`、`~/.netrc`、`~/Library/Keychains`、`~/.claude`、`~/.codex` など、gem-agent と lagent が使う一覧）、それらのディレクトリの直下にあるリンクの指す先、ひな形（`.env.example`、`.env.sample`、`.env.template`、`.env.dist`）を除く任意の `.env`。大文字小文字の違い・リンク・渡されたままか解決後かを問わず、どんな綴りでも見つけ（判定は [nlink-jp/pathguard](https://github.com/nlink-jp/pathguard) が行う）、ファイルがあってもなくても同じ答えで拒否する。これは床であって境界ではない
+- `/work` は `execute_code` が走らせるコードから書き込めるので、そこにある symlink はサンドボックスからの入力として扱う。サーバーは workspace のファイルに work ディレクトリの `os.Root` 経由でしか触れず、その root 自体も `work_dir` の root を通して開く: `attach_files` はリンク経由で外へ出るパス（および通常ファイル以外と、同じ床が拒むパス — `.env` や `~/.ssh` 内のリンクの行き先 — を、あってもなくても）を拒否し、サーバー自身の書き込み（`_upload/`・`_code/`）もリンクで行き先を変えられず、ディレクトリ自体がリンクになっている workspace はマウントする前に拒否する。`/work` の内側に留まるリンクは従来どおり使える。
 - コンテナは既定で `network=none`。ネットワーク（およびコンテナ内 `pip install`）を有効にするには `[container.limits] network = "bridge"` を設定。**特定プロセスのみ許可するような細粒度 ACL は意図的に提供しません**
 - コンテナは非 root ユーザー（ランタイム Dockerfile の UID 1000）で動作。rootless Podman ではホストユーザーが `--userns keep-id:uid=1000,gid=1000` でその UID にマップされる
 - ツールごとの timeout は `context.WithTimeout` で強制。期限切れ時は `podman exec` の子プロセスを kill した上で MCP リクエストには応答を返す（ハングしない）

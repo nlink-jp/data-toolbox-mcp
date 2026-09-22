@@ -24,7 +24,7 @@ func Register(srv *mcpserver.Server, mgr *workspace.Manager, cfg *config.Config)
 			"properties": {
 				` + workDirProp + `,
 				"workspace_id": {"type":"string","description":"Workspace key (matches ^[a-zA-Z0-9_-]{1,64}$)."},
-				"file_path":    {"type":"string","description":"Host absolute path to read. Symlinks are resolved first; credential and agent-control locations (~/.ssh, ~/.aws and the like) are refused."},
+				"file_path":    {"type":"string","description":"Host absolute path to read. Links are followed; credential and agent-control locations (~/.ssh, ~/.aws and the like) and .env files are refused, whether or not a file is there."},
 				"table_name":   {"type":"string","description":"DuckDB table name to create or replace."}
 			},
 			"required": ["work_dir","workspace_id","file_path","table_name"]

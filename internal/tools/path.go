@@ -26,24 +26,44 @@ var ErrPathNotAllowed = toolerr.New(toolerr.CodePathNotAllowed, "path_not_allowe
 // a boundary — bounding what this process may touch at all is a sandboxing
 // proxy's job.
 //
-// Both spellings are checked, as given and symlink-resolved, against both
-// spellings of every entry: a blacklisted directory may itself be a symlink.
+// The path is placed first (workdir.Where: every link followed, a dangling
+// one by its target) and judged there, as given and as placed, before
+// anything asks whether it exists: a path that exists and one that does not
+// get the same answer, message and details included, so no answer tells the
+// caller which secrets exist. Existence is then asked of the place, not
+// re-walked from the spelling.
 func ResolveInput(filePath string) (string, error) {
 	abs, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", toolerr.Newf(toolerr.CodeInvalidArguments, "filepath.Abs: %v", err)
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	where := workdir.Where(abs)
+	if err := refused(filePath, where); err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(where)
 	if err != nil {
 		return "", toolerr.Newf(toolerr.CodeInvalidArguments, "filepath.EvalSymlinks: %v", err)
 	}
 	real = filepath.Clean(real)
-	if why := workdir.Sensitive(filePath, real); why != "" {
-		return "", toolerr.Newf(toolerr.CodePathNotAllowed,
-			"path_not_allowed: %s is refused: %s", filePath, why).WithDetails(map[string]any{
-			"file_path": filePath,
-			"resolved":  real,
-		})
+	// It resolved somewhere other than it was placed: it changed in between.
+	// Judge where it now leads.
+	if real != where {
+		if err := refused(filePath, real); err != nil {
+			return "", err
+		}
 	}
 	return real, nil
+}
+
+// refused is the floor on a host path, as given and at its place.
+func refused(filePath, where string) error {
+	if why := workdir.Sensitive(filePath, where); why != "" {
+		return toolerr.Newf(toolerr.CodePathNotAllowed,
+			"path_not_allowed: %s is refused: %s", filePath, why).WithDetails(map[string]any{
+			"file_path": filePath,
+			"resolved":  where,
+		})
+	}
+	return nil
 }
