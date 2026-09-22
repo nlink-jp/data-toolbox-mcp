@@ -32,7 +32,7 @@ The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to an
 - **No registry push** — the runtime Dockerfile is `go:embed`-ed and built locally on first use. ([ADR-0005](docs/en/adr/0005-local-build-image-distribution.md))
 - **Single binary, single version**: `serve` / `build-runtime` / `doctor` / `version` subcommands all ship in one binary.
 - **Structured tool errors**: every tool error has a stable `code` LLM clients can branch on (`path_not_allowed`, `unsupported_language`, `script_failed`, ...).
-- **Defense-in-depth path checks**: the credential blacklist is applied to the path as given and to the place it leads (every link followed, a dangling one by its target), before anything asks whether a file is there — so a symlink cannot jail-break into `~/.ssh`, a symlinked `~/.ssh` cannot slip past, and the answer never says which secrets exist.
+- **Defense-in-depth path checks**: the credential blacklist is applied to the path as given and to the place it leads (every link followed, a dangling one by its target), before anything asks whether a file is there — so a symlink cannot jail-break into `~/.ssh`, a symlinked `~/.ssh` cannot slip past, and a path refused this way gets the same answer whether or not a file is there.
 
 ## Requirements
 
