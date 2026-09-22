@@ -119,6 +119,14 @@ two planted links out of `/work` were refused by the `os.Root` whether or not th
 - The judgement and the read are two steps, and a link swapped in between them is followed: a
   check-to-use race, not closed here (closing it means judging what was opened, by its descriptor).
 
+## Amendment (2026-09-22, v0.8.2): the place is pathguard's `Where`
+
+A path's place was the last of pathguard's forms (`Forms`); the forms are de-duplicated, so when a chain of links
+comes back to an earlier spelling the last one is a middle hop, not the end (recorded as a known limit). pathguard
+v0.3.0's `Where` returns the end of the walk, and the place is now that. A path whose chain of links does not end
+stays as given, and the floor refuses it. The other limits are recorded, and accepted, under "Limits" in pathguard's
+README.
+
 ## References
 
 - Organization ADR-021 (the work-dir contract of the file-mediated MCP servers)
