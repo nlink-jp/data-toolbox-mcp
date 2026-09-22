@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/tools"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/transport"
 	"github.com/nlink-jp/data-toolbox-mcp/internal/workspace"
@@ -29,7 +32,7 @@ func TestServedServerAnswersInitializeWithTheInstructions(t *testing.T) {
 	var out bytes.Buffer
 	cfg := config.Default()
 	srv := newServer(transport.NewStdioTransport(in, &out), nil,
-		workspace.NewManager(cfg, workspace.NewPodmanClient()), cfg)
+		workspace.NewManager(cfg, workspace.NewPodmanClient(), tools.WorkspaceCheck), cfg)
 	if len(srv.Tools()) == 0 {
 		t.Error("the served server registers no tools")
 	}
@@ -105,5 +108,31 @@ func TestServeBuildsItsServerOnlyThroughNewServer(t *testing.T) {
 	}
 	if !runServeCallsNewServer {
 		t.Error("runServe does not call newServer, so what the served binary answers is not what the test above checked")
+	}
+}
+
+// The server's workspace manager judges the directory a call actually uses:
+// work_dir=~/.config with workspace_id=gh would mount ~/.config/gh into the
+// container, or delete it.
+func TestTheServersWorkspaceManagerJudgesWorkspaceDirectories(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	cfgDir := filepath.Join(home, ".config")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := newWorkspaceManager(config.Default())
+	var te *toolerr.Error
+	if _, err := m.PreviewDelete(context.Background(), cfgDir, "gh"); !errors.As(err, &te) || te.Code != toolerr.CodeWorkDirDenied {
+		t.Errorf("PreviewDelete(~/.config, gh) = %v, want %s", err, toolerr.CodeWorkDirDenied)
+	}
+	if err := m.Delete(context.Background(), cfgDir, "gh"); !errors.As(err, &te) || te.Code != toolerr.CodeWorkDirDenied {
+		t.Errorf("Delete(~/.config, gh) = %v, want %s", err, toolerr.CodeWorkDirDenied)
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "gh")); err != nil {
+		t.Errorf("~/.config/gh is gone after a refused delete: %v", err)
 	}
 }

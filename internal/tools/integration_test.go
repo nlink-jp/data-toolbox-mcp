@@ -44,7 +44,7 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 		t.Skipf("runtime image %q not built locally; run `data-toolbox-mcp build-runtime` first", cfg.Container.Image)
 	}
 
-	mgr := workspace.NewManager(cfg, pc)
+	mgr := workspace.NewManager(cfg, pc, tools.WorkspaceCheck)
 	defer mgr.Cleanup(context.Background())
 
 	ctx := context.Background()

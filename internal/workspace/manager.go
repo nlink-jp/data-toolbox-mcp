@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/data-toolbox-mcp/internal/config"
+	"github.com/nlink-jp/data-toolbox-mcp/internal/toolerr"
 )
 
 // Workspace is the in-memory handle for a workspace_id.
@@ -35,16 +36,32 @@ type Manager struct {
 	mu         sync.Mutex
 	cfg        *config.Config
 	podman     *PodmanClient
+	check      func(dir string) error
 	workspaces map[string]*Workspace
 }
 
-// NewManager wires a manager around the config and a podman client.
-func NewManager(cfg *config.Config, podman *PodmanClient) *Manager {
+// NewManager wires a manager around the config, a podman client and the
+// workspace check. check judges <work_dir>/<workspace_id> — the directory
+// actually mounted, loaded from and deleted — before any of that: validating
+// work_dir alone let work_dir=~/.config with workspace_id=gh mount
+// ~/.config/gh into the container. The server passes tools.WorkspaceCheck; a
+// Manager without one refuses every workspace.
+func NewManager(cfg *config.Config, podman *PodmanClient, check func(dir string) error) *Manager {
 	return &Manager{
 		cfg:        cfg,
 		podman:     podman,
+		check:      check,
 		workspaces: make(map[string]*Workspace),
 	}
+}
+
+// judge applies the workspace check to <workDir>/<id>.
+func (m *Manager) judge(workDir, id string) error {
+	if m.check == nil {
+		return toolerr.New(toolerr.CodeWorkDirDenied,
+			"this server's workspace check was not set up (workspace.NewManager)")
+	}
+	return m.check(filepath.Join(filepath.Clean(workDir), id))
 }
 
 // Ensure returns a running workspace for id, creating the container if needed.
@@ -57,6 +74,9 @@ func (m *Manager) Ensure(ctx context.Context, workDir, id string) (*Workspace, e
 	}
 	if !filepath.IsAbs(workDir) {
 		return nil, fmt.Errorf("work_dir %q must be an absolute path", workDir)
+	}
+	if err := m.judge(workDir, id); err != nil {
+		return nil, err
 	}
 
 	if w, ok := m.lookup(workDir, id); ok {
@@ -330,6 +350,9 @@ func (m *Manager) PreviewDelete(ctx context.Context, workDir, id string) (*Delet
 	if err := ValidateID(id); err != nil {
 		return nil, err
 	}
+	if err := m.judge(workDir, id); err != nil {
+		return nil, err
+	}
 	baseDir := filepath.Join(workDir, id)
 	cleaned := filepath.Clean(baseDir)
 	parentClean := filepath.Clean(workDir)
@@ -381,6 +404,9 @@ func diskUsage(root string) int64 {
 // reachable only by lying about workspace_dir itself.
 func (m *Manager) Delete(ctx context.Context, workDir, id string) error {
 	if err := ValidateID(id); err != nil {
+		return err
+	}
+	if err := m.judge(workDir, id); err != nil {
 		return err
 	}
 

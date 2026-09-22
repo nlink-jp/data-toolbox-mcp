@@ -44,7 +44,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		defer logFile.Close()
 	}
 
-	mgr := workspace.NewManager(cfg, workspace.NewPodmanClient())
+	mgr := newWorkspaceManager(cfg)
 	srv := newServer(transport.NewStdioTransport(os.Stdin, os.Stdout), logger, mgr, cfg)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -94,4 +94,11 @@ func resolveConfig(explicit string) (*config.Config, error) {
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
+}
+
+// newWorkspaceManager is the one place the server builds its workspace
+// manager, with the check that judges every <work_dir>/<workspace_id> — a
+// function so a test holds the wiring rather than a copy of it.
+func newWorkspaceManager(cfg *config.Config) *workspace.Manager {
+	return workspace.NewManager(cfg, workspace.NewPodmanClient(), tools.WorkspaceCheck)
 }

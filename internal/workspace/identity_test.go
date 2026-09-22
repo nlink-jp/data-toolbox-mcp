@@ -100,7 +100,7 @@ func (h *fakeHost) has(id string) bool {
 
 func newHostManager() (*Manager, *fakeHost) {
 	h := newFakeHost()
-	return NewManager(config.Default(), &PodmanClient{binary: "podman", runner: h}), h
+	return NewManager(config.Default(), &PodmanClient{binary: "podman", runner: h}, allowAll), h
 }
 
 func TestDeleteThenEnsureStartsAFreshContainer(t *testing.T) {

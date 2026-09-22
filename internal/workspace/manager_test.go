@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func TestEnsureCreatesContainer(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 	w, err := m.Ensure(context.Background(), work, "alpha")
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
@@ -88,7 +89,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 	w1, err := m.Ensure(context.Background(), work, "beta")
 	if err != nil {
 		t.Fatalf("ensure 1: %v", err)
@@ -123,7 +124,7 @@ func TestEnsureReattachesExisting(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 	w, err := m.Ensure(context.Background(), work, "reattach")
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
@@ -136,7 +137,7 @@ func TestEnsureReattachesExisting(t *testing.T) {
 func TestEnsureRejectsInvalidID(t *testing.T) {
 	cfg := config.Default()
 	work := t.TempDir()
-	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
+	m := NewManager(cfg, newFakeClient(&fakeRunner{}), allowAll)
 
 	_, err := m.Ensure(context.Background(), work, "../bad")
 	if err == nil {
@@ -164,7 +165,7 @@ func TestReleaseStopsAndRemoves(t *testing.T) {
 		return nil, nil, 0, nil
 	}
 
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 	if _, err := m.Ensure(context.Background(), work, "gamma"); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestReleaseStopsAndRemoves(t *testing.T) {
 func TestListEmptyWhenDirAbsent(t *testing.T) {
 	cfg := config.Default()
 	work := filepath.Join(t.TempDir(), "never-created")
-	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
+	m := NewManager(cfg, newFakeClient(&fakeRunner{}), allowAll)
 
 	infos, err := m.List(context.Background(), work)
 	if err != nil {
@@ -238,7 +239,7 @@ func TestListReturnsExistingWorkspaces(t *testing.T) {
 		}
 		return nil, nil, 0, nil
 	}
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 	infos, err := m.List(context.Background(), work)
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -276,7 +277,7 @@ func TestDeleteRemovesContainerAndDisk(t *testing.T) {
 		}
 		return nil, nil, 0, nil
 	}
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 
 	if err := m.Delete(context.Background(), work, "doomed"); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -313,7 +314,7 @@ func TestDeleteIsIdempotentForAbsentContainer(t *testing.T) {
 		}
 		return nil, nil, 0, nil
 	}
-	m := NewManager(cfg, newFakeClient(fr))
+	m := NewManager(cfg, newFakeClient(fr), allowAll)
 	if err := m.Delete(context.Background(), work, "lonely"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -325,7 +326,7 @@ func TestDeleteIsIdempotentForAbsentContainer(t *testing.T) {
 func TestDeleteRejectsInvalidID(t *testing.T) {
 	cfg := config.Default()
 	work := t.TempDir()
-	m := NewManager(cfg, newFakeClient(&fakeRunner{}))
+	m := NewManager(cfg, newFakeClient(&fakeRunner{}), allowAll)
 
 	err := m.Delete(context.Background(), work, "../escape")
 	if err == nil || !strings.Contains(err.Error(), "invalid workspace_id") {
@@ -360,7 +361,7 @@ func TestListSkipsDirectoriesThatAreNotWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	infos, err := NewManager(cfg, newFakeClient(&fakeRunner{})).List(context.Background(), work)
+	infos, err := NewManager(cfg, newFakeClient(&fakeRunner{}), allowAll).List(context.Background(), work)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -375,5 +376,48 @@ func TestListSkipsDirectoriesThatAreNotWorkspaces(t *testing.T) {
 	// workspace out of a directory that was not one.
 	if _, err := os.Stat(filepath.Join(logs, "work")); !os.IsNotExist(err) {
 		t.Errorf("listing created work/ inside the log directory: %v", err)
+	}
+}
+
+// allowAll stands for the server's check in tests of the manager's own
+// mechanics; the check itself is workdir.Resolver.CheckBeneath's.
+func allowAll(string) error { return nil }
+
+// The directory a call actually uses — mounted, loaded from, deleted — is
+// judged first: work_dir=~/.config with workspace_id=gh would otherwise mount
+// ~/.config/gh into the container or delete it. The check sees
+// <work_dir>/<workspace_id>, its refusal is returned as is, and podman is never
+// asked. A Manager without a check refuses.
+func TestEveryWorkspaceEntryJudgesTheDirectoryFirst(t *testing.T) {
+	cfg := config.Default()
+	work := t.TempDir()
+	refusal := errors.New("refused")
+	var seen []string
+	fr := &fakeRunner{}
+	m := NewManager(cfg, newFakeClient(fr), func(dir string) error { seen = append(seen, dir); return refusal })
+	ctx := context.Background()
+	if _, err := m.Ensure(ctx, work, "gh"); !errors.Is(err, refusal) {
+		t.Errorf("Ensure = %v, want the check's refusal", err)
+	}
+	if _, err := m.PreviewDelete(ctx, work, "gh"); !errors.Is(err, refusal) {
+		t.Errorf("PreviewDelete = %v, want the check's refusal", err)
+	}
+	if err := m.Delete(ctx, work, "gh"); !errors.Is(err, refusal) {
+		t.Errorf("Delete = %v, want the check's refusal", err)
+	}
+	want := filepath.Join(work, "gh")
+	for _, dir := range seen {
+		if dir != want {
+			t.Errorf("the check saw %q, want %q", dir, want)
+		}
+	}
+	if len(seen) != 3 {
+		t.Errorf("the check ran %d times, want 3", len(seen))
+	}
+	if len(fr.calls) != 0 {
+		t.Errorf("podman was asked %d time(s) for a refused workspace", len(fr.calls))
+	}
+	if _, err := NewManager(cfg, newFakeClient(fr), nil).Ensure(ctx, work, "ws"); err == nil {
+		t.Error("a Manager without a check ensured a workspace")
 	}
 }

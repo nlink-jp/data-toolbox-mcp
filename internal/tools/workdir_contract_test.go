@@ -19,7 +19,7 @@ func registeredTools(t *testing.T) []mcpserver.Tool {
 	srv := mcpserver.New("data-toolbox-mcp", "test",
 		transport.NewStdioTransport(strings.NewReader(""), io.Discard), nil)
 	cfg := config.Default()
-	Register(srv, workspace.NewManager(cfg, workspace.NewPodmanClient()), cfg)
+	Register(srv, workspace.NewManager(cfg, workspace.NewPodmanClient(), WorkspaceCheck), cfg)
 	tools := srv.Tools()
 	// The floor under every per-tool loop: with no tools registered, each
 	// contract would pass without having examined anything.

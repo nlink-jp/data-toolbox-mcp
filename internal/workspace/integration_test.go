@@ -46,7 +46,7 @@ func TestIntegrationEnsureRelease(t *testing.T) {
 		t.Skipf("test image %q not present locally; run `podman pull %s` first", image, image)
 	}
 
-	m := workspace.NewManager(cfg, pc)
+	m := workspace.NewManager(cfg, pc, func(string) error { return nil })
 	defer m.Cleanup(context.Background())
 
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestIntegrationDeleteTouchesOnlyItsOwnWorkspace(t *testing.T) {
 		t.Skipf("test image %q not present locally; run `podman pull %s` first", image, image)
 	}
 
-	m := workspace.NewManager(cfg, pc)
+	m := workspace.NewManager(cfg, pc, func(string) error { return nil })
 	workA, workB := t.TempDir(), t.TempDir()
 	// Delete is the cleanup too: it removes the container whether or not the
 	// manager still has a handle for it.

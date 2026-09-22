@@ -20,6 +20,12 @@ func resolveWorkDir(ctx context.Context, arg string) (string, error) {
 	return workDirResolver().Resolve(ctx, arg)
 }
 
+// WorkspaceCheck judges <work_dir>/<workspace_id> — the directory a call
+// actually uses, which may not exist yet — with the same resolver (organization
+// ADR-021 §4). The workspace manager takes it at construction and calls it
+// before it mounts, loads from or deletes a workspace.
+func WorkspaceCheck(dir string) error { return workDirResolver().CheckBeneath(dir) }
+
 // workDirResolver builds the resolver, denying this server's own directories.
 //
 // A work directory is the caller's, not ours (organization ADR-021 §4: "not a
