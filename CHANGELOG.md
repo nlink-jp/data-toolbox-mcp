@@ -29,6 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `work_dir` are **refused**; they used to pass unchecked.
 - `work_dir_denied` carries `reason` in its `details`.
 
+### Security
+
+- **The workspace directory is judged, not only `work_dir`.** `work_dir=~/.config`
+  with `workspace_id=gh` made the workspace `~/.config/gh`: `load_data` and
+  `execute_code` mounted it into the container as `/work`, so `load_from_work`,
+  `query_data` or a script could read a credential file there and return it, and
+  `delete_workspace` could delete it. `<work_dir>/<workspace_id>` is now refused
+  with `work_dir_denied` wherever `work_dir` itself would be, before the manager
+  mounts, loads from or deletes anything. The hole was present since the
+  work-directory contract (ADR-0011).
+- A path holding a NUL byte is refused (pathguard v0.2.0).
+
 ## [0.7.0] - 2026-09-22
 
 ### Added
