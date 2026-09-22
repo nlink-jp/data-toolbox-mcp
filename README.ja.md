@@ -116,7 +116,7 @@ default_row_limit = 20000
 ## セキュリティモデル（要点）
 
 - 呼び出しは必ず `work_dir` — **あなたが読み戻せる**ディレクトリの絶対パス — を名指し、workspace は `<work_dir>/<workspace_id>/`。`execute_code` が `/work` に書いたファイルはそこに現れるので、結果の `host_work_dir` は開けるパスになる。`work_dir` は信用する前に検証される（絶対・実在・書込可、システム位置やホームそのもの、資格情報ディレクトリ、およびこのサーバー自身の設定ディレクトリ `~/.config/data-toolbox-mcp` はサブディレクトリ込みで拒否）
-- `load_data` はあなたが読めるファイルなら読む。例外は資格情報・エージェント制御ディレクトリの固定ブラックリスト（`~/.ssh`、`~/.aws`、`~/.gnupg`、`~/.config/gcloud`、`~/Library/Keychains`、`~/.claude`、`~/.codex`、任意の `.env`）。照合は渡されたままのパスと `EvalSymlinks` 解決後のパスを、各エントリの両方の綴りに対して行う。これは床であって境界ではない
+- `load_data` はあなたが読めるファイルなら読む。例外は、ホームにある資格情報・エージェント制御の場所（`~/.ssh`、`~/.aws`、`~/.kube`、`~/.gnupg`、`~/.config/gcloud`、`~/.config/gh`、`~/.netrc`、`~/Library/Keychains`、`~/.claude`、`~/.codex` など、gem-agent と lagent が使う一覧）、それらのディレクトリの直下にあるリンクの指す先、ひな形（`.env.example`、`.env.sample`、`.env.template`、`.env.dist`）を除く任意の `.env`。大文字小文字の違い・リンク・渡されたままか解決後かを問わず、どんな綴りでも見つける（判定は [nlink-jp/pathguard](https://github.com/nlink-jp/pathguard) が行う）。これは床であって境界ではない
 - `/work` は `execute_code` が走らせるコードから書き込めるので、そこにある symlink はサンドボックスからの入力として扱う。サーバーは workspace のファイルに work ディレクトリの `os.Root` 経由でしか触れず、その root 自体も `work_dir` の root を通して開く: `attach_files` はリンク経由で外へ出るパス（および通常ファイル以外）を拒否し、サーバー自身の書き込み（`_upload/`・`_code/`）もリンクで行き先を変えられず、ディレクトリ自体がリンクになっている workspace はマウントする前に拒否する。`/work` の内側に留まるリンクは従来どおり使える。
 - コンテナは既定で `network=none`。ネットワーク（およびコンテナ内 `pip install`）を有効にするには `[container.limits] network = "bridge"` を設定。**特定プロセスのみ許可するような細粒度 ACL は意図的に提供しません**
 - コンテナは非 root ユーザー（ランタイム Dockerfile の UID 1000）で動作。rootless Podman ではホストユーザーが `--userns keep-id:uid=1000,gid=1000` でその UID にマップされる

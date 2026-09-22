@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Path judgement moved to [nlink-jp/pathguard](https://github.com/nlink-jp/pathguard)**
+  (ADR-0012). `internal/workdir` is now an adapter onto it; the resolver is
+  built with `workdir.NewResolver(serverOwnedDirs()...)`. Places are compared by
+  file identity and by names folded the way the disk folds them, instead of by
+  name.
+- `load_data` now **refuses** the real places under your home from the list
+  gem-agent and lagent use — newly `~/.kube`, `~/.config/gh`, `~/.azure`,
+  `~/.terraform.d`, `~/.gemini`, `~/.config/mcp-bridge`, `~/.netrc`, `~/.npmrc`,
+  `~/.pypirc`, `~/.git-credentials`, `~/.vault-token`, `~/.docker/config.json`,
+  `~/.claude.json`, `~/.bash_history`, `~/.zsh_history` — every spelling of any
+  refused place (another case, a link, a firmlink), and wherever a link
+  directly inside one of those directories points. When `$HOME` names another
+  directory than the account's home, both are protected. Linux `/etc` is
+  refused as a `work_dir`.
+- `load_data` now **accepts** `.env.example`, `.env.sample`, `.env.template` and
+  `.env.dist` (templates, not secrets).
+- When the home directory cannot be determined, `load_data` paths and every
+  `work_dir` are **refused**; they used to pass unchecked.
+- `work_dir_denied` carries `reason` in its `details`.
+
 ## [0.7.0] - 2026-09-22
 
 ### Added

@@ -90,12 +90,12 @@ func TestWorkDirAcceptsOrdinaryDir(t *testing.T) {
 }
 
 // TestOnlyOnePlaceConstructsAResolver closes the class rather than the eight
-// instances of it. A `workdir.Resolver{}` written in a tool is a resolver with
-// an empty Denied list, and that is what shipped: every tool built its own and
-// none of them denied anything. The rule is now a property of the package —
-// one construction site, in workdir.go — and this walks the syntax trees to
-// hold it, so the next tool cannot reintroduce the defect by copying its
-// neighbour.
+// instances of it. Every tool once built its own `workdir.Resolver{}` with an
+// empty Denied list and none of them denied anything. The rule is a property
+// of the package — one construction site, a workdir.NewResolver call in
+// workdir.go, and no Resolver literal anywhere (a literal is the zero value,
+// which refuses every call) — and this walks the syntax trees to hold it, so
+// the next tool cannot reintroduce the defect by copying its neighbour.
 func TestOnlyOnePlaceConstructsAResolver(t *testing.T) {
 	const allowed = "workdir.go"
 
@@ -110,37 +110,41 @@ func TestOnlyOnePlaceConstructsAResolver(t *testing.T) {
 		t.Fatal("parsed no packages; the test is watching nothing")
 	}
 
-	found := map[string]int{}
+	isWorkdir := func(sel *ast.SelectorExpr, name string) bool {
+		id, ok := sel.X.(*ast.Ident)
+		return ok && id.Name == "workdir" && sel.Sel.Name == name
+	}
+	calls, literals := map[string]int{}, map[string]int{}
 	for _, pkg := range pkgs {
 		for name, file := range pkg.Files {
 			ast.Inspect(file, func(n ast.Node) bool {
-				lit, ok := n.(*ast.CompositeLit)
-				if !ok {
-					return true
+				switch x := n.(type) {
+				case *ast.CallExpr:
+					if sel, ok := x.Fun.(*ast.SelectorExpr); ok && isWorkdir(sel, "NewResolver") {
+						calls[filepath.Base(name)]++
+					}
+				case *ast.CompositeLit:
+					if sel, ok := x.Type.(*ast.SelectorExpr); ok && isWorkdir(sel, "Resolver") {
+						literals[filepath.Base(name)]++
+					}
 				}
-				sel, ok := lit.Type.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				pkgIdent, ok := sel.X.(*ast.Ident)
-				if !ok || pkgIdent.Name != "workdir" || sel.Sel.Name != "Resolver" {
-					return true
-				}
-				found[filepath.Base(name)]++
 				return true
 			})
 		}
 	}
 
-	if found[allowed] == 0 {
-		t.Errorf("no workdir.Resolver literal in %s; the single construction "+
+	if calls[allowed] == 0 {
+		t.Errorf("no workdir.NewResolver call in %s; the single construction "+
 			"point moved and this test no longer guards anything", allowed)
 	}
-	for name, n := range found {
+	for name, n := range calls {
 		if name != allowed {
-			t.Errorf("%s constructs %d workdir.Resolver literal(s); every tool "+
-				"must go through resolveWorkDir in %s, or it runs with an empty "+
-				"Denied list", name, n, allowed)
+			t.Errorf("%s calls workdir.NewResolver %d time(s); every tool must "+
+				"go through resolveWorkDir in %s", name, n, allowed)
 		}
+	}
+	for name, n := range literals {
+		t.Errorf("%s writes %d workdir.Resolver literal(s): the zero value refuses "+
+			"every call; go through resolveWorkDir in %s", name, n, allowed)
 	}
 }

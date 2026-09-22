@@ -1,6 +1,7 @@
 # ADR-0011: Workspaces live under the caller's `work_dir`; `allowed_paths` is removed
 
-- Status: Accepted
+- Status: Accepted — its implementation (the work-directory checks and the input blacklist) is
+  replaced by [ADR-0012](0012-pathguard.md) (nlink-jp/pathguard)
 - Date: 2026-09-13
 - Amends: the workspace location (under `workspace_dir`) decided in [ADR-0001](0001-workspace-id-lifecycle.md), and the `allowed_paths` input guard
 

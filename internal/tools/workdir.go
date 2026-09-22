@@ -14,7 +14,8 @@ import (
 // Every tool goes through here. That is the point: eight tools each building
 // their own `workdir.Resolver{}` is eight places to forget what the resolver
 // has to refuse, and all eight had forgotten. A tool added later cannot,
-// because there is nothing for it to construct.
+// because there is nothing for it to construct — and a zero Resolver now
+// refuses every call rather than protecting nothing.
 func resolveWorkDir(ctx context.Context, arg string) (string, error) {
 	return workDirResolver().Resolve(ctx, arg)
 }
@@ -29,7 +30,7 @@ func resolveWorkDir(ctx context.Context, arg string) (string, error) {
 // `delete_workspace` would remove a subtree of it — all on a model's say-so,
 // against the file that sets this server's own container limits.
 func workDirResolver() workdir.Resolver {
-	return workdir.Resolver{Denied: serverOwnedDirs()}
+	return workdir.NewResolver(serverOwnedDirs()...)
 }
 
 // serverOwnedDirs lists this server's own config and state directories.
@@ -44,10 +45,9 @@ func workDirResolver() workdir.Resolver {
 // that directory is the operator's choice, not this server's own, and
 // refusing an arbitrary directory — a project tree, or the process's working
 // directory — would deny work directories callers legitimately use.
+//
+// An empty directory (no home) is passed on, and refuses every call rather
+// than protecting nothing.
 func serverOwnedDirs() []string {
-	dir := config.Dir()
-	if dir == "" {
-		return nil
-	}
-	return []string{dir}
+	return []string{config.Dir()}
 }

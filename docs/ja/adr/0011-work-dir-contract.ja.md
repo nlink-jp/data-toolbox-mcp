@@ -1,6 +1,7 @@
 # ADR-0011: ワークスペースは呼び出し側の `work_dir` 配下に置き、`allowed_paths` を廃止する
 
-- Status: Accepted
+- Status: Accepted —— その実装（work dir の検査と入力のブラックリスト）は [ADR-0012](0012-pathguard.ja.md)
+  （nlink-jp/pathguard）で置き換えた
 - Date: 2026-09-13
 - Amends: [ADR-0001](0001-workspace-id-lifecycle.ja.md) のワークスペース所在（`workspace_dir` 配下）と、`allowed_paths` による入力制限
 
