@@ -74,8 +74,9 @@ every workspace. pathguard v0.2.0 also refuses a path holding a NUL byte.
 A `load_data` `file_path` was resolved with `filepath.EvalSymlinks` before the floor judged it, so a
 file in a credential location got `path_not_allowed` when it was there and `invalid_arguments` when it
 was not — the answer told the caller which secrets exist. `attach_files` did not apply the floor to
-files in `/work` at all, and returned a `.env` there (its size, time and hash), or the target of a
-link in `~/.ssh` when the workspace lay in that sync folder (its contents), when present. It is the class the independent reviews of
+files in `/work` at all, and returned a `.env` there, or the target of a link in `~/.ssh` when the
+workspace lay in that sync folder, when present: inline if its extension is a text or image one
+(`.txt`, `.json`, `.png`, …), otherwise its size, time and hash. It is the class the independent reviews of
 slack-mcp-extender and chrome-pilot-mcp found; here it was measured with the home directory redirected
 to a temporary one (all 7 `load_data` pairs and 2 of 4 `attach_files` pairs got different answers; the
 two planted links out of `/work` were refused by the `os.Root` whether or not their targets existed).
@@ -99,7 +100,7 @@ two planted links out of `/work` were refused by the `os.Root` whether or not th
 - Limits: the floor on `attach_files` is not a boundary for `/work`. `execute_code` reads everything
   there, so a workspace that *contains* a protected place (a sync folder a link in `~/.ssh` leads into)
   stays visible to the sandbox.
-- Known limits, all in pathguard and recorded for its next release:
+- Known limits in pathguard, recorded for its next release:
   - A `..` that climbs out through an entry of a credential directory — in the path, or in the target
     of a planted link — is judged where it leads, not where it passes, so the answer can still show
     whether that entry is a link and where its target lies: pathguard judges cleaned forms, not the
@@ -111,8 +112,12 @@ two planted links out of `/work` were refused by the `os.Root` whether or not th
   - `work_dir` is validated by pathguard/workdir in the order organization ADR-022 §4 sets (not found
     before denied), so a `work_dir` naming a credential directory is answered by whether it exists.
   - A link target with a non-ASCII name spelled in another Unicode normalisation is found by identity
-    only while it exists (pathguard does not normalise), and so is a hard link to a credential file
-    made elsewhere. Whoever can make a hard link already reaches the file.
+    only while it exists (pathguard does not normalise). A hard link made elsewhere is refused only when
+    it is to a file that is itself a place on the floor (`~/.netrc`, `~/.docker/config.json`, …), and
+    only while it exists; one to a file inside a credential directory (`~/.ssh/id_rsa`) or to a `.env`
+    is not refused at all — a directory is compared by its own identity, not by its files'.
+- The judgement and the read are two steps, and a link swapped in between them is followed: a
+  check-to-use race, not closed here (closing it means judging what was opened, by its descriptor).
 
 ## References
 
