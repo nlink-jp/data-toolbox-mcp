@@ -21,8 +21,10 @@ import (
 // against "refused" tells the caller which secrets exist (knowledge:
 // security.md, "Compare places by identity, not by name").
 //
-// The layer observed is the tool call, the answer a caller receives; the home
-// directory is a temporary one, so no real credential directory is touched.
+// The layer observed is the tool call, the answer a caller receives. The home
+// directory is a temporary one: nothing is created, read or written in a real
+// credential directory (pathguard still lists the account's own, for the links
+// inside them).
 func TestExistenceIsNotRevealedByLoadData(t *testing.T) {
 	base := realDir(t, t.TempDir())
 	home := filepath.Join(base, "home")
@@ -48,17 +50,25 @@ func TestExistenceIsNotRevealedByLoadData(t *testing.T) {
 		_, err := LoadData(context.Background(), nil, config.Default(), raw)
 		return errAnswer(err)
 	}
-	for _, c := range []struct{ name, arg, leaf string }{
-		{"in a credential directory", filepath.Join(home, ".aws", "data.csv"), filepath.Join(home, ".aws", "data.csv")},
-		{"through a dotfiles-linked ~/.config", filepath.Join(home, ".config", "gcloud", "data.csv"), filepath.Join(dot, "gcloud", "data.csv")},
-		{"a credential file", filepath.Join(home, ".docker", "config.json"), filepath.Join(home, ".docker", "config.json")},
-		{"a planted link to a credential file", filepath.Join(other, "lnk_file.csv"), filepath.Join(home, ".aws", "planted.csv")},
-		{"through a planted link to a credential directory", filepath.Join(other, "lnk_dir", "via.csv"), filepath.Join(home, ".aws", "via.csv")},
-		{"where a link in ~/.ssh leads", filepath.Join(sync, "ssh_config"), filepath.Join(sync, "ssh_config")},
-		{"a .env file", filepath.Join(other, ".env"), filepath.Join(other, ".env")},
+	for _, c := range []struct{ name, arg, leaf, link string }{
+		{"in a credential directory", filepath.Join(home, ".aws", "data.csv"), filepath.Join(home, ".aws", "data.csv"), ""},
+		{"through a dotfiles-linked ~/.config", filepath.Join(home, ".config", "gcloud", "data.csv"), filepath.Join(dot, "gcloud", "data.csv"), ""},
+		{"a credential file", filepath.Join(home, ".docker", "config.json"), filepath.Join(home, ".docker", "config.json"), ""},
+		{"a planted link to a credential file", filepath.Join(other, "lnk_file.csv"), filepath.Join(home, ".aws", "planted.csv"), ""},
+		{"through a planted link to a credential directory", filepath.Join(other, "lnk_dir", "via.csv"), filepath.Join(home, ".aws", "via.csv"), ""},
+		{"where a link in ~/.ssh leads", filepath.Join(sync, "ssh_config"), filepath.Join(sync, "ssh_config"), ""},
+		{"a .env file", filepath.Join(other, ".env"), filepath.Join(other, ".env"), ""},
+		// The entry named is itself a link, there or not: the refusal must not
+		// say where it leads.
+		{"a credential entry that is a link", filepath.Join(home, ".ssh", "linked"), filepath.Join(home, ".ssh", "linked"), filepath.Join(sync, "deep", "linked")},
+		{"in a credential directory that is a link", filepath.Join(home, ".kube", "config"), filepath.Join(home, ".kube"), filepath.Join(dot, "kube")},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			writeFileAt(t, c.leaf, "a,b\n1,2\n")
+			if c.link != "" {
+				symlinkOrSkip(t, c.link, c.leaf)
+			} else {
+				writeFileAt(t, c.leaf, "a,b\n1,2\n")
+			}
 			e := answer(c.arg)
 			if err := os.Remove(c.leaf); err != nil {
 				t.Fatal(err)
@@ -105,14 +115,11 @@ func TestExistenceIsNotRevealedByAttachFiles(t *testing.T) {
 		b, _ := json.Marshal(res)
 		return string(b)
 	}
-	for _, c := range []struct {
-		name, arg, leaf string
-		refused         bool
-	}{
-		{"a .env file", "/work/sub/.env", filepath.Join(wsWork, "sub", ".env"), true},
-		{"where a link in ~/.ssh leads", "/work/ssh_config.txt", filepath.Join(wsWork, "ssh_config.txt"), true},
-		{"a planted link to a credential file", "/work/lnk_file.txt", filepath.Join(home, ".aws", "planted.txt"), true},
-		{"through a planted link to a credential directory", "/work/lnk_dir/via.txt", filepath.Join(home, ".aws", "via.txt"), true},
+	for _, c := range []struct{ name, arg, leaf string }{
+		{"a .env file", "/work/sub/.env", filepath.Join(wsWork, "sub", ".env")},
+		{"where a link in ~/.ssh leads", "/work/ssh_config.txt", filepath.Join(wsWork, "ssh_config.txt")},
+		{"a planted link to a credential file", "/work/lnk_file.txt", filepath.Join(home, ".aws", "planted.txt")},
+		{"through a planted link to a credential directory", "/work/lnk_dir/via.txt", filepath.Join(home, ".aws", "via.txt")},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			writeFileAt(t, c.leaf, "SECRET=1\n")
@@ -121,7 +128,7 @@ func TestExistenceIsNotRevealedByAttachFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			m := answer(c.arg)
-			if c.refused && (!strings.Contains(e, `rejected: `+c.arg) || strings.Contains(e, "SECRET")) {
+			if !strings.Contains(e, `rejected: `+c.arg) || strings.Contains(e, "SECRET") {
 				t.Errorf("existing: %s\n  want it rejected, unread", e)
 			}
 			if e != m {

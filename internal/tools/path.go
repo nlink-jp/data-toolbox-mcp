@@ -56,13 +56,15 @@ func ResolveInput(filePath string) (string, error) {
 	return real, nil
 }
 
-// refused is the floor on a host path, as given and at its place.
+// refused is the floor on a host path, as given and at its place. The refusal
+// names the path only as the caller gave it: the place differs when an entry
+// on the way is a link (~/.ssh/config into a sync folder, a dotfiles-linked
+// ~/.aws), so echoing it would say which entries exist and where they lead.
 func refused(filePath, where string) error {
 	if why := workdir.Sensitive(filePath, where); why != "" {
 		return toolerr.Newf(toolerr.CodePathNotAllowed,
 			"path_not_allowed: %s is refused: %s", filePath, why).WithDetails(map[string]any{
 			"file_path": filePath,
-			"resolved":  where,
 		})
 	}
 	return nil
