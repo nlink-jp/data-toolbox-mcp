@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-09-22
+
+### Security
+
+- **Whether a file exists no longer changes the answer.** A `load_data`
+  `file_path` in a credential or agent-control location was refused when the
+  file was there and answered `invalid_arguments` when it was not, so the
+  answer told the caller which secrets exist. The path is now judged at the
+  place it leads to before anything looks for a file, and a refused place gets
+  the same answer, message and details, either way (ADR-0012, amendment).
+- `attach_files` applies the same floor to each path under `/work`: a `.env`
+  there, or the file a link in `~/.ssh` leads to when the workspace lies in
+  that sync folder, is rejected — it was returned when present: inline for a
+  text or image extension, otherwise its size, time and hash.
+- A `load_data` refusal names the path only as given: `details.resolved` is
+  gone. It named where the path leads, which differed when an entry on the way
+  is a link, and so said which entries exist and where they lead.
+
 ## [0.8.0] - 2026-09-22
 
 ### Changed
