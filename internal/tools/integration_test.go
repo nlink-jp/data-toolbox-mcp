@@ -113,14 +113,18 @@ func TestIntegrationFullToolFlow(t *testing.T) {
 		t.Errorf("expected unsupported_language error, got: %v", err)
 	}
 
-	// 5) load_data rejects path outside allowed_paths
-	outside := filepath.Join(t.TempDir(), "outside.csv")
-	os.WriteFile(outside, []byte("a,b\n1,x\n"), 0o644)
+	// 5) load_data refuses a credential-like file. There is no allowlist
+	//    since ADR-0011, so an ordinary file anywhere is read; the floor is
+	//    the blacklist, and a .env file is on it.
+	secret := filepath.Join(dataDir, ".env")
+	if err := os.WriteFile(secret, []byte("TOKEN=x\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
 	_, err = tools.LoadData(ctx, mgr, cfg, json.RawMessage(`{
 		"work_dir":"`+work+`",
 		"workspace_id":"itest",
-		"file_path":"`+outside+`",
-		"table_name":"outside"
+		"file_path":"`+secret+`",
+		"table_name":"secret"
 	}`))
 	if err == nil || !strings.Contains(err.Error(), "path_not_allowed") {
 		t.Errorf("expected path_not_allowed error, got: %v", err)
