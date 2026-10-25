@@ -15,10 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   everything else — from PyPI without verifying any of it, so a compromised
   upload would have reached every user on their next rebuild. The base is now
   pinned by its multi-arch index digest, the pull policy is gone, and the
-  Python packages are installed with `pip install --require-hashes --no-deps`
-  from `runtime/requirements.lock`: 18 packages, dependencies included, each at
-  one version with the SHA256 of every distribution. A lock with one hash
-  altered is refused; the amd64 wheels match the lock as the arm64 ones do.
+  Python packages are installed with
+  `pip install --only-binary=:all: --require-hashes --no-deps` from
+  `runtime/requirements.lock`: 18 packages, dependencies included, each at one
+  version with the SHA256 of every distribution. `--only-binary` keeps pip from
+  building an sdist, which would fetch its build backend unverified. A lock
+  with one hash altered is refused; the amd64 wheels verify against the lock as
+  the arm64 ones do. The lock records the SHA256 of the `requirements.in` it
+  came from, and a test fails if the two drift.
   The installed versions are unchanged from v0.8.3. `describe_runtime` now
   advertises exact versions.
 - **How updates arrive changes.** Re-running `build-runtime` takes Debian's

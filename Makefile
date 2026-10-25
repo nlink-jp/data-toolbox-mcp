@@ -117,12 +117,18 @@ runtime-image: build
 	$(BIN_DIR)/$(BINARY) build-runtime
 
 ## runtime-lock: Re-resolve runtime/requirements.in into the hash-locked
-## runtime/requirements.lock (ADR-0007, amended v0.8.4). Review the version
+## runtime/requirements.lock (ADR-0007, amended v0.8.4). Wheels only: an sdist
+## would make pip fetch its build backend unverified. The last line records the
+## input's SHA256 so a test can tell the lock is stale. Review the version
 ## diff, update internal/runtime/manifest.go, rebuild the image and release.
 runtime-lock:
 	uv pip compile runtime/requirements.in --universal --python-version 3.12 \
-		--generate-hashes --custom-compile-command 'make runtime-lock' \
+		--only-binary :all: --generate-hashes \
+		--custom-compile-command 'make runtime-lock' \
 		-o runtime/requirements.lock
+	printf '# requirements.in sha256: %s\n' \
+		"$$(shasum -a 256 runtime/requirements.in | cut -d' ' -f1)" \
+		>> runtime/requirements.lock
 
 ## help: Show available targets
 help:

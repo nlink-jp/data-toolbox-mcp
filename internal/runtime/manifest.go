@@ -4,8 +4,10 @@ package runtime
 // runtime container ships. `describe_runtime` (ADR-0006) returns this plus
 // the live network setting from config.
 //
-// The manifest must stay in lock-step with runtime/Dockerfile. When the
-// Dockerfile changes, update Default below in the same commit and amend
+// The packages must stay in lock-step with runtime/requirements.lock, which is
+// what the image installs. When `make runtime-lock` changes it, update Default
+// below in the same commit (TestManifestMatchesLock compares exact versions,
+// TestManifestNamesMatchInput the names against requirements.in) and amend
 // ADR-0007 if the change is structural.
 
 // Package is one entry in the runtime's pip install list.
@@ -27,9 +29,9 @@ type Manifest struct {
 	Notes          []string          `json:"notes"`
 }
 
-// Default is the baseline manifest matching the embedded Dockerfile.
-// CHANGE THIS WHEN runtime/Dockerfile CHANGES. The e2e manifest-drift test
-// pins this to the actually-installed packages.
+// Default is the baseline manifest matching the embedded runtime files.
+// CHANGE THIS WHEN runtime/requirements.lock CHANGES; the unit tests in cmd
+// fail until it agrees.
 var Default = Manifest{
 	PythonVersion:  "3.12",
 	ContainerImage: "localhost/data-toolbox-runtime:latest",

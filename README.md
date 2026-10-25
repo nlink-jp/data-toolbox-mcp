@@ -48,8 +48,9 @@ make build
 
 # 2. Build the runtime container image (~2 min). The base is pinned by digest
 #    and the Python packages are installed from a hash-locked list
-#    (runtime/requirements.lock), so you get exactly what this release was
-#    tested with. Re-running it takes Debian's signed security updates; new
+#    (runtime/requirements.lock), so the base and the Python packages are
+#    exactly what this release was tested with. Every build, the first one
+#    included, applies Debian's signed security updates; new
 #    Python packages and a new base arrive with a new release of this binary.
 #    After a rebuild, restart the MCP server (or its client): a workspace
 #    container that is already running keeps the image it started from.

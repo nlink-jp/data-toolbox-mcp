@@ -26,11 +26,14 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 # Installed only from requirements.lock: every package, dependencies
 # included, at one version, checked against its SHA256. --require-hashes
 # refuses anything whose hash is not in the lock, and --no-deps keeps pip from
-# fetching a dependency the lock does not name. The lock is regenerated from
-# requirements.in with `make runtime-lock`, reviewed, and released — a rebuild
-# never resolves versions by itself (ADR-0007, amended v0.8.4).
+# resolving a dependency the lock does not name. --only-binary=:all: is what
+# makes that complete: building an sdist would have pip fetch its build
+# backend (setuptools, say) with no hash check, so a missing wheel must fail
+# the build instead. The lock is regenerated from requirements.in with
+# `make runtime-lock`, reviewed, and released — a rebuild never resolves
+# versions by itself (ADR-0007, amended v0.8.4).
 COPY requirements.lock /tmp/requirements.lock
-RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/requirements.lock \
+RUN pip install --no-cache-dir --disable-pip-version-check --only-binary=:all: --require-hashes --no-deps -r /tmp/requirements.lock \
     && rm -f /tmp/requirements.lock
 
 # Fail the build if the locked combination does not work: exercise the paths
