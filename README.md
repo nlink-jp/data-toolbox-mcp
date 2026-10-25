@@ -46,7 +46,10 @@ The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to an
 # 1. Build the binary (signed with Developer ID on macOS if the cert is in your keychain)
 make build
 
-# 2. Build the runtime container image (first time only, ~2 min)
+# 2. Build the runtime container image (~2 min). Re-run it to take security
+#    updates: every build starts without the layer cache, pulls a newer
+#    python:3.12-slim if there is one, and upgrades the base's packages.
+#    The previous image stays untagged; `podman image prune` removes it.
 dist/data-toolbox-mcp build-runtime
 
 # 3. Verify the environment

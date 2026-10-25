@@ -60,6 +60,7 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - `query_data` auto-applies `LIMIT [query] default_row_limit` (= 20000) when SQL has no LIMIT. Don't strip user-supplied LIMITs.
 - All tools accept `workspace_id` as their first argument. Never silently default it.
 - For container lifecycle: every container is labeled `app=data-toolbox-mcp`. Orphan detection filters on this label.
+- **The runtime build bypasses the cache and refreshes the base** (`podman build --no-cache --pull=newer` from `buildArgs`, plus `apt-get upgrade -y` in the Dockerfile; ADR-0005 amendment v0.8.3). The embedded Dockerfile never changes between rebuilds, so with the cache a rebuild updated nothing, and the `python:3.12-slim` tag stayed at the first pulled copy. `TestBuildArgsBypassCacheAndRefreshBase` and `TestDockerfileUpgradesBaseBeforeInstall` hold it.
 - **Dockerfile + manifest sync**: when you change `runtime/Dockerfile`, update `internal/runtime/manifest.go` in the same commit. The e2e manifest-drift test catches name-set mismatches but not silently mis-pinned versions.
 - **matplotlib font order matters**: matplotlib 3.10's Agg backend renders all text with the first loadable font in `font.sans-serif`. `Noto Sans CJK JP` MUST be first (it covers Latin glyphs too, so no side effect on English).
 - **`attach_files` does not Ensure the workspace**: it only reads from disk (no Podman). Calling it on a workspace_id that was never `Ensure`'d will just report missing files. This is by design — attach is a pure-host operation.

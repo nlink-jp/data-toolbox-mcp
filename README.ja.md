@@ -46,7 +46,10 @@ LLM プロバイダーには一切依存しません。stdio で素の MCP プ�
 # 1. バイナリビルド（macOS で Developer ID 証明書がキーチェーンにあれば自動署名）
 make build
 
-# 2. ランタイムコンテナイメージ build（初回のみ、約 2 分）
+# 2. ランタイムコンテナイメージ build（約 2 分）。セキュリティ更新を取り込むときも
+#    これを再実行する。毎回層キャッシュを使わずに作り、新しい python:3.12-slim が
+#    あれば取得し、ベースのパッケージも更新する。前のイメージはタグなしで残るので
+#    `podman image prune` で消せる
 dist/data-toolbox-mcp build-runtime
 
 # 3. 環境診断

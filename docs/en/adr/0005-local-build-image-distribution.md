@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-05
 - Driver: magi
+- Revisions: 2026-10-25 — builds bypass the layer cache, pull a newer base, and upgrade the base's packages, so re-running `build-runtime` takes security updates (v0.8.3)
 - Generalises to: other container-based tools in nlink-jp
 
 ---
@@ -61,6 +62,8 @@ If, in Phase 2+, multiple users ask for lower setup friction, a separate ADR wil
 - Setup is two steps (build + image-build)
 - The first build needs network access for `pip install` plus a couple of minutes
 - Podman build-cache management becomes the user's responsibility
+  - **Amendment (2026-10-25, v0.8.3): the build no longer uses the cache, and re-running `build-runtime` is how security updates are taken.** Through v0.8.2 `build-runtime` ran a plain `podman build`. The embedded Dockerfile does not change between rebuilds, so the apt and pip layers came from the cache and nothing was updated; and because the base is the tag `python:3.12-slim`, podman kept the copy it had pulled first (on the maintainer's machine, three months old — Python itself included). After CVE-2026-111497 (Brotli decoder out-of-bounds write) a rebuild could therefore never take a fix. The build is now `podman build --no-cache --pull=newer`, and the Dockerfile runs `apt-get upgrade -y` before its install, because installing two packages never upgrades what the base already contains. Measured after the change: the base was refreshed to a 4-day-old image, and `apt list --upgradable` in the rebuilt image lists nothing. `TestBuildArgsBypassCacheAndRefreshBase` and `TestDockerfileUpgradesBaseBeforeInstall` hold both
+  - Every rebuild now takes the network for the base pull as well as `pip install` (which already needed it), and gets a new image ID; the previous image stays behind untagged until `podman image prune`. The layer-cache sharing that ADR-0007 lists as a positive no longer applies to this image's own layers
 - Keeping versions aligned between `make build` and `make runtime-image` becomes the user's responsibility (the README must establish the convention)
 
 ## Alternatives Considered

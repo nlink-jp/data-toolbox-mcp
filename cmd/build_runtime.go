@@ -21,6 +21,10 @@ var buildRuntimeCmd = &cobra.Command{
 	Long: `Unpack the embedded Dockerfile to a temp directory and run ` + "`podman build`" + ` to
 produce localhost/data-toolbox-runtime:<version> (and the :latest tag).
 
+Every build starts from scratch, without the layer cache, and pulls the base
+image when the registry has a newer one, so re-running build-runtime takes
+Debian, Python and package security updates.
+
 See ADR-0005 for the rationale (local-build distribution).`,
 	RunE: runBuildRuntime,
 }
@@ -58,11 +62,7 @@ func runBuildRuntime(cmd *cobra.Command, args []string) error {
 		runtimeImageName + ":" + Version,
 		runtimeImageName + ":latest",
 	}
-	podmanArgs := []string{"build"}
-	for _, t := range tags {
-		podmanArgs = append(podmanArgs, "-t", t)
-	}
-	podmanArgs = append(podmanArgs, tmp)
+	podmanArgs := buildArgs(tmp, tags)
 
 	fmt.Fprintln(cmd.ErrOrStderr(), "+ podman", podmanArgs)
 	pb := exec.CommandContext(cmd.Context(), "podman", podmanArgs...)
@@ -78,6 +78,22 @@ func runBuildRuntime(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.OutOrStdout(), " -", t)
 	}
 	return nil
+}
+
+// buildArgs is the argv after `podman` for building the runtime image.
+//
+// A rebuild exists to take security updates, and the embedded Dockerfile does
+// not change between rebuilds, so the build bypasses the layer cache
+// (--no-cache) — with the cache the apt and pip layers are reused and nothing
+// is updated. The base is a tag, not a digest, so --pull=newer also refreshes
+// a local python:3.12-slim that the registry has since replaced (ADR-0005,
+// amended v0.8.3).
+func buildArgs(contextDir string, tags []string) []string {
+	args := []string{"build", "--no-cache", "--pull=newer"}
+	for _, t := range tags {
+		args = append(args, "-t", t)
+	}
+	return append(args, contextDir)
 }
 
 func init() {

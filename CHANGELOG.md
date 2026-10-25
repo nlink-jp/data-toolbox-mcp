@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Re-running `build-runtime` now takes security updates.** It ran a plain
+  `podman build`: the embedded Dockerfile does not change between rebuilds, so
+  the apt and pip layers came from the cache, and the base tag
+  `python:3.12-slim` stayed at whatever copy was pulled first — Python itself
+  included. The build is now `podman build --no-cache --pull=newer`, and the
+  Dockerfile runs `apt-get upgrade -y` before its install. **Rebuild the image
+  once** with `data-toolbox-mcp build-runtime`; the previous image stays
+  untagged until `podman image prune`. ADR-0005 is amended.
 - **The Linux archives no longer carry macOS file metadata.** macOS `tar` wrote
   each bundled file's extended attributes (`com.apple.provenance`, and a Dropbox
   attribute where the tree is synced) into the `.tar.gz` twice: as AppleDouble

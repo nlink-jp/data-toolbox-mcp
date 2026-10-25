@@ -4,7 +4,15 @@ FROM python:3.12-slim
 #   fonts-noto-cjk  — CJK glyph rendering for matplotlib (ADR-0007)
 #   ca-certificates — TLS roots, harmless under network=none, needed when
 #                     [container.limits] network is flipped to "bridge"
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# Upgrade before installing: installing the two packages above never touches
+# what python:3.12-slim already contains, so without it a rebuild keeps the
+# base's libraries at whatever versions the pulled image had (ADR-0005,
+# amended v0.8.3).
+RUN export DEBIAN_FRONTEND=noninteractive \
+    && apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         fonts-noto-cjk \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-05
 - Driver: magi
+- Revisions: 2026-10-25 — ビルドで層キャッシュを使わず、新しいベースを取得し、ベースのパッケージも更新する。`build-runtime` を再実行すればセキュリティ更新が入る（v0.8.3）
 - Generalises to: nlink-jp の他コンテナベースツール
 
 ---
@@ -61,6 +62,8 @@ Phase 1 では **ローカルビルド配布** を採用し、build 自体は **
 - セットアップ手順が 2 ステップ（build + image-build）になる
 - 初回 build に `pip install` 用ネットワーク + 数分が必要
 - Podman の build cache 管理がユーザー責任になる
+  - **改定（2026-10-25、v0.8.3）: ビルドはキャッシュを使わない。セキュリティ更新は `build-runtime` の再実行で取り込む。** v0.8.2 までの `build-runtime` は素の `podman build` だった。同梱の Dockerfile は作り直しの間で変わらないため、apt と pip の層はキャッシュから再利用され、何も更新されなかった。さらにベースはタグ `python:3.12-slim` で指定しているので、podman は最初に取得したコピーを使い続けた（保守者の手元では 3 か月前のもので、Python 本体も含む）。CVE-2026-111497（Brotli デコーダの境界外書き込み）の後も、作り直しで修正を取り込めない状態だった。ビルドは `podman build --no-cache --pull=newer` になり、Dockerfile は install の前に `apt-get upgrade -y` を実行する。2 つのパッケージを入れるだけでは、ベースに最初から入っているものは更新されないためである。変更後の実測では、ベースは 4 日前の版に更新され、作り直したイメージで `apt list --upgradable` は 0 件だった。`TestBuildArgsBypassCacheAndRefreshBase` と `TestDockerfileUpgradesBaseBeforeInstall` がこれを押さえる
+  - 作り直しのたびに、`pip install`（もともと必要）に加えてベースの取得にもネットワークを使う。新しいイメージ ID になり、前のイメージは `podman image prune` するまでタグなしで残る。ADR-0007 が利点に挙げたレイヤキャッシュの共有は、このイメージ自身の層には当てはまらなくなった
 - バージョン整合の責任がユーザーに移る（`make build` のバイナリと `make runtime-image` のイメージのバージョンを揃える慣習を README で明示する必要）
 
 ## Alternatives Considered
