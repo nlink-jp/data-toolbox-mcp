@@ -15,7 +15,7 @@ NOTARY_PROFILE    ?= nlink-jp-notary
 # darwin ships arm64 only (no amd64, no universal). linux/windows keep their matrix.
 PLATFORMS := darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: build build-all package verify-release test vet-tags clean runtime-image runtime-lock help
+.PHONY: build build-all package verify-release test vet-tags e2e clean runtime-image runtime-lock help
 
 ## build: Build binary for the current OS/Arch → ./dist/data-toolbox-mcp
 build:
@@ -107,6 +107,17 @@ test:
 ## leaves them broken until someone runs the live suite months later.
 vet-tags:
 	go vet -tags e2e ./...
+
+## e2e: Run every podman-driven test against the real runtime image: the MCP
+## stdio e2e suite against the freshly built binary, then the opt-in
+## integration tests in internal/ (needs podman and `make runtime-image`; a few
+## minutes). A release gate: `make test` cannot run these, and they hold the
+## only check that the image agrees with its manifest. The e2e suite fails, not
+## skips, when it cannot start.
+E2E_IMAGE ?= localhost/data-toolbox-runtime:latest
+e2e: build
+	DATA_TOOLBOX_TEST_PODMAN=1 DATA_TOOLBOX_TEST_IMAGE=$(E2E_IMAGE) go test -count=1 -tags e2e ./e2e/
+	DATA_TOOLBOX_TEST_PODMAN=1 DATA_TOOLBOX_TEST_IMAGE=$(E2E_IMAGE) go test -count=1 -run TestIntegration ./internal/...
 
 ## clean: Remove build artifacts
 clean:
