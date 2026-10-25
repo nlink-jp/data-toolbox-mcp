@@ -63,7 +63,9 @@ Phase 1 では **ローカルビルド配布** を採用し、build 自体は **
 - 初回 build に `pip install` 用ネットワーク + 数分が必要
 - Podman の build cache 管理がユーザー責任になる
   - **改定（2026-10-25、v0.8.3）: ビルドはキャッシュを使わない。セキュリティ更新は `build-runtime` の再実行で取り込む。** v0.8.2 までの `build-runtime` は素の `podman build` だった。同梱の Dockerfile は作り直しの間で変わらないため、apt と pip の層はキャッシュから再利用され、何も更新されなかった。さらにベースはタグ `python:3.12-slim` で指定しているので、podman は最初に取得したコピーを使い続けた（保守者の手元では 3 か月前のもので、Python 本体も含む）。CVE-2026-111497（Brotli デコーダの境界外書き込み）の後も、作り直しで修正を取り込めない状態だった。ビルドは `podman build --no-cache --pull=newer` になり、Dockerfile は install の前に `apt-get upgrade -y` を実行する。2 つのパッケージを入れるだけでは、ベースに最初から入っているものは更新されないためである。変更後の実測では、ベースは 4 日前の版に更新され、作り直したイメージで `apt list --upgradable` は 0 件だった。`TestBuildArgsBypassCacheAndRefreshBase` と `TestDockerfileUpgradesBaseBeforeInstall` がこれを押さえる
-  - 作り直しのたびに、`pip install`（もともと必要）に加えてベースの取得にもネットワークを使う。新しいイメージ ID になり、前のイメージは `podman image prune` するまでタグなしで残る。ADR-0007 が利点に挙げたレイヤキャッシュの共有は、このイメージ自身の層には当てはまらなくなった
+  - 作り直しのたびに、`pip install`（もともと必要）に加えてベースの取得にもネットワークを使う。新しいイメージ ID になる。同じ版で作った前のイメージはタグなしで残り（`podman image prune` で消せる）、前の版で作ったものは `:<版>` のタグが残るので `podman rmi` が要る。ADR-0007 が利点に挙げたレイヤキャッシュの共有は、このイメージ自身の層には当てはまらなくなった
+  - **レジストリに届かないと、作り直してもベースは古いまま。** podman は手元にイメージがあれば取得の失敗を握りつぶす（`man podman-build` の `--pull`）ので、古い `python:3.12-slim` のままビルドが続く。`pip install` はどのみちネットワークを要するので、問題になるのはレジストリだけに届かない環境に限られる
+  - **作り直しは、動いているワークスペースには届かない。** `Manager.Ensure` は既存のコンテナを名前で再利用し、どのイメージから起動したかを確かめない。コンテナはサーバーの終了時に消える（`stop_on_exit = true`、既定）。作り直した後は、サーバー（またはそれを起動するクライアント）を再起動する必要がある。`stop_on_exit = false` のときは、古い `app=data-toolbox-mcp` のコンテナを手で消す必要がある
 - バージョン整合の責任がユーザーに移る（`make build` のバイナリと `make runtime-image` のイメージのバージョンを揃える慣習を README で明示する必要）
 
 ## Alternatives Considered

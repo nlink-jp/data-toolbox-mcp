@@ -49,7 +49,11 @@ make build
 # 2. Build the runtime container image (~2 min). Re-run it to take security
 #    updates: every build starts without the layer cache, pulls a newer
 #    python:3.12-slim if there is one, and upgrades the base's packages.
-#    The previous image stays untagged; `podman image prune` removes it.
+#    After a rebuild, restart the MCP server (or its client): a workspace
+#    container that is already running keeps the image it started from.
+#    An image from the same version stays untagged (`podman image prune`);
+#    one from an earlier version keeps its tag
+#    (`podman rmi localhost/data-toolbox-runtime:<old version>`).
 dist/data-toolbox-mcp build-runtime
 
 # 3. Verify the environment
