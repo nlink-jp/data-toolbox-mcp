@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-05
 - Driver: magi
+- Revisions: 2026-10-25 — pyarrow takes a floor (`>=18.0`) instead of `~=18.0`; Brotli copies not yet fixed upstream recorded (v0.8.3)
 - Generalises to: other Python-sandbox projects in nlink-jp (mcp-skeleton derivatives, etc.)
 
 ---
@@ -115,6 +116,13 @@ v0.1.0: 692MB → v0.2.0 estimate: 850–900MB (`fonts-noto-cjk` ~150MB + matplo
 - One additional `apt install` step in the Dockerfile increases complexity (but shell-agent-v2 prior art means maintainers won't get lost).
 - Python 3.13 → 3.12 downgrade: user code can't use 3.13-only syntax (generator-expression rule relaxations, etc.). Practically zero impact.
 - Future requests to add scipy / scikit-learn / seaborn each incur a fresh ADR because v0.2.0 says no to everything else.
+
+**Amendment (2026-10-25, v0.8.3): pyarrow takes a floor.**
+
+- CVE-2026-111497 is an out-of-bounds write in the Brotli decoder (affected 1.0.3–1.2.0). `load_data` reads user-supplied `.parquet` through DuckDB's `read_parquet`, and `execute_code` can read one with pyarrow or pandas, so a Brotli-coded parquet reaches a decoder.
+- Arrow 18 bundles Brotli 1.0.9 (`cpp/thirdparty/versions.txt` at `apache-arrow-18.1.0`). Apache Arrow ships fixes only in new major versions — the Brotli update (apache/arrow#55167, unmerged on 2026-10-25) targets main — so `pyarrow~=18.0` could never take it. pyarrow is now `>=18.0`, and a rebuild takes whatever major Arrow has released. At v0.8.3 that is 26.0.0, which is not yet fixed either; the floor is what lets the next rebuild take the fix.
+- The other packages keep `~=`. pandas 3, polars 2, DuckDB 2 and Pillow 13 were all on PyPI on 2026-10-25; moving to any of them changes the API that LLM-written analysis code uses and is not a patch-release change. pyarrow is consumed through stable interfaces (DataFrame ⇄ Arrow, parquet I/O): with pyarrow 26.0.0, pandas 2.3.3, polars 1.44.2 and DuckDB 1.5.6, `pip check` is clean and parquet / DataFrame / DuckDB round-trips behave as with pyarrow 18.1.0 (measured in both images).
+- **Not fixed by this release:** DuckDB vendors Brotli 1.1.0 in `third_party/brotli` for parquet (v1.1.3, v1.4.1 and v1.5.1 alike); the fix (duckdb/duckdb#27791) was unmerged on 2026-10-25. `duckdb~=1.1` already floats to the newest 1.x, so a rebuild after a fixed 1.x release takes it. Pillow 11.3.0 bundles `libbrotlidec` 1.1.0 for WOFF2 fonts; this image renders only the installed Noto CJK fonts, so the path is not reached in practice, and whether a newer Pillow bundles a fixed Brotli was not checked.
 
 ## Alternatives Considered
 

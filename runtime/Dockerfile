@@ -20,11 +20,15 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 # Python data-analysis stack + plotting (ADR-0003 + ADR-0007).
 # Pillow is pulled in transitively by matplotlib, but pinned explicitly
 # so describe_runtime can advertise it as guaranteed.
+#
+# pyarrow takes a floor, not a compatible-release pin: Apache Arrow ships
+# fixes (CVE-2026-111497 in its bundled Brotli among them) only in new major
+# versions, so ~=18.0 could never take one (ADR-0007, amended v0.8.3).
 RUN pip install --no-cache-dir \
         duckdb~=1.1 \
         pandas~=2.2 \
         polars~=1.8 \
-        pyarrow~=18.0 \
+        'pyarrow>=18.0' \
         matplotlib~=3.10 \
         Pillow~=11.0
 

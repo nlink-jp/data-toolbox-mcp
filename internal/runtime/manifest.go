@@ -37,7 +37,7 @@ var Default = Manifest{
 		{Name: "duckdb", VersionConstraint: "~=1.1"},
 		{Name: "pandas", VersionConstraint: "~=2.2"},
 		{Name: "polars", VersionConstraint: "~=1.8"},
-		{Name: "pyarrow", VersionConstraint: "~=18.0"},
+		{Name: "pyarrow", VersionConstraint: ">=18.0"},
 		{Name: "matplotlib", VersionConstraint: "~=3.10"},
 		{Name: "Pillow", VersionConstraint: "~=11.0"},
 	},

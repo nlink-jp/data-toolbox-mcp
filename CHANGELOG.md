@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Dockerfile runs `apt-get upgrade -y` before its install. **Rebuild the image
   once** with `data-toolbox-mcp build-runtime`; the previous image stays
   untagged until `podman image prune`. ADR-0005 is amended.
+- **pyarrow is `>=18.0` instead of `~=18.0`.** CVE-2026-111497 (an
+  out-of-bounds write in the Brotli decoder) affects the Brotli 1.0.9 that
+  Arrow 18 bundles, and Arrow ships fixes only in new major versions, so the old
+  pin could never take one. A rebuild now installs pyarrow 26.0.0, which is not
+  fixed yet either; the next rebuild after Arrow's fixed release takes it.
+  **Not fixed by this release:** the Brotli 1.1.0 that DuckDB vendors for
+  parquet (upstream fix unmerged; `duckdb~=1.1` takes it on rebuild once a
+  fixed 1.x ships) and Pillow's bundled `libbrotlidec` 1.1.0 (WOFF2 fonts only,
+  not reached in this image). ADR-0007 is amended.
+
 - **The Linux archives no longer carry macOS file metadata.** macOS `tar` wrote
   each bundled file's extended attributes (`com.apple.provenance`, and a Dropbox
   attribute where the tree is synced) into the `.tar.gz` twice: as AppleDouble
