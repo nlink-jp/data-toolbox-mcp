@@ -169,7 +169,7 @@ dry_run = false is irreversible. Layered with the MCP client's user-approval gat
 
 No `Ensure`, no Podman call — pure static data + one config read. Intended to be called once by the LLM at session start.
 
-**Manifest truth**: when the Dockerfile changes, `internal/runtime/manifest.go` is updated in the same commit (same discipline as ADR-0005's `go:embed` sync responsibility). Drift is caught by an e2e test that compares the manifest against `pip list` inside the actual container.
+**Manifest truth**: when the Dockerfile changes, `internal/runtime/manifest.go` is updated in the same commit (same discipline as ADR-0005's `go:embed` sync responsibility). Drift is caught by an e2e test (`TestE2E_v020_ManifestDrift`, run by `make e2e`) that compares the manifest against `pip list` inside the actual image: every declared package installed at exactly its declared version, and the declared Python.
 
 ### 3.7 attach_files(workspace_id, paths) — v0.3.0 (ADR-0008)
 
@@ -337,20 +337,17 @@ Per the ADR-0004 strategy and the "dummy MCP client automated E2E harness" (RFP 
 
 ### 7.2 Integration tests
 
-- Real-Podman integration tests live under `_test/integration/`
-- Run only when `DATA_TOOLBOX_TEST_PODMAN=1` is set (CI skip-friendly)
-- Pattern after shell-agent-v2's `internal/sandbox/integration_test.go`
+- Real-Podman integration tests sit next to the code they test (`internal/workspace/integration_test.go`, `internal/tools/integration_test.go`)
+- Run only when `DATA_TOOLBOX_TEST_PODMAN=1` is set
 
 ### 7.3 Automated E2E test harness (dummy MCP client)
 
-- A dummy-MCP-client driver lives in `_test/e2e/`
-- Build the binary → spawn → send JSON-RPC tool calls → verify responses
-- Repurpose the shell-mock structure from mcp-guardian's `internal/proxy/proxy_test.go`
-- Scenarios covered:
-  - Full workspace lifecycle (init → load → query → execute → cleanup)
-  - Error paths (unsupported_language, path_not_allowed, workspace_id_invalid)
-  - Timeout → forced container stop → next-ensure recovery
-  - Concurrent-access rejection on the second caller
+- `e2e/` (build tag `e2e`) spawns `dist/data-toolbox-mcp serve`, speaks JSON-RPC over stdio and checks the answers. Each test names its own `work_dir` (a temporary directory), as every caller must (ADR-0011).
+- Scenarios: the full lifecycle, workspace management, Japanese matplotlib, the `attach_files` and `load_from_work` round trips, query truncation and the missing-table hint, the delete dry run, workspace isolation, error paths (`unsupported_language`, `path_not_allowed`, `work_dir_required`, an unknown tool), the timeout, and manifest drift.
+- **`make e2e` runs it, and the integration tests of §7.2 after it, and is a release step.** They need podman and the runtime image, so `make test` does not run them: `make test` stays runnable without either (`make test-linux` runs it in a container that has no podman). The manifest-against-image check exists only here.
+- **Asked for, it fails rather than skips.** With `DATA_TOOLBOX_TEST_PODMAN=1` set, a missing binary or image fails the test; only an unset variable skips.
+- **What `make test` catches without podman**: the package's untagged tests load the suite's config through the server's own loader (`TestE2EConfigLoads`) and test the drift comparison itself (`TestManifestDrift`), and `make vet-tags` type-checks the tagged tests.
+- Why: from v0.6.0 to v0.8.4 the suite could not start — its config carried the keys ADR-0011 removed, and its calls named no `work_dir` — and nothing said so, because it skipped unless asked for and no release step asked.
 
 ## 8. Out of scope (Phase 1)
 

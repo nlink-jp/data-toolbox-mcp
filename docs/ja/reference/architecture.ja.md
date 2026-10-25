@@ -169,7 +169,7 @@ dry_run = false は不可逆。MCP クライアント側のユーザー承認に
 
 `Ensure` 不要、Podman 呼び出しも不要 (純粋な静的データ + config 1 個参照)。LLM がセッション冒頭で 1 回呼ぶ用途を想定。
 
-**manifest の真実性**: Dockerfile を変更するときは同コミットで `internal/runtime/manifest.go` も更新する規律 (ADR-0005 の go:embed 同期と同じ責務範囲)。drift 検証は e2e テストで `pip list` 結果と突き合わせる。
+**manifest の真実性**: Dockerfile を変更するときは同コミットで `internal/runtime/manifest.go` も更新する規律 (ADR-0005 の go:embed 同期と同じ責務範囲)。drift 検証は e2e テスト（`TestE2E_v020_ManifestDrift`。`make e2e` が走らせる）で実イメージ内の `pip list` と突き合わせる。宣言したパッケージがすべて宣言どおりの版で入っていること、Python が宣言どおりであることを確かめる。
 
 ### 3.7 attach_files(workspace_id, paths) — v0.3.0 (ADR-0008)
 
@@ -337,20 +337,17 @@ ADR-0004 の方針と「ダミー MCP クライアントによる自動 E2E テ�
 
 ### 7.2 Integration tests
 
-- `_test/integration/` に Podman 実機統合テスト
-- 環境変数 `DATA_TOOLBOX_TEST_PODMAN=1` でのみ実行（CI スキップ可能）
-- shell-agent-v2 の `internal/sandbox/integration_test.go` パターンを参考
+- Podman 実機の統合テストは、対象コードの隣に置く（`internal/workspace/integration_test.go`、`internal/tools/integration_test.go`）
+- 環境変数 `DATA_TOOLBOX_TEST_PODMAN=1` のときだけ走る
 
 ### 7.3 自動 E2E テストハーネス（ダミー MCP クライアント）
 
-- `_test/e2e/` に MCP クライアント役の Go テストコード
-- バイナリビルド → spawn → JSON-RPC 経由でツール呼び出し → 戻り値検証
-- mcp-guardian の `internal/proxy/proxy_test.go` の shell mock 構造を流用
-- カバーするシナリオ:
-  - workspace ライフサイクル全パス (init → load → query → execute → cleanup)
-  - エラーパス (unsupported_language, path_not_allowed, workspace_id_invalid)
-  - タイムアウト → コンテナ強制停止 → 次回 ensure で復旧
-  - 並行アクセス時の後着拒否
+- `e2e/`（ビルドタグ `e2e`）が `dist/data-toolbox-mcp serve` を起動し、stdio の JSON-RPC で話しかけて答えを確かめる。どの呼び出し元もそうするように（ADR-0011）、各テストは自分の `work_dir`（一時ディレクトリ）を渡す。
+- シナリオ: ライフサイクル全体、workspace 管理、日本語 matplotlib、`attach_files` と `load_from_work` の往復、クエリの切り詰めと存在しないテーブルのヒント、削除の dry run、workspace の分離、エラーパス（`unsupported_language`・`path_not_allowed`・`work_dir_required`・存在しないツール）、タイムアウト、manifest のずれ。
+- **走らせるのは `make e2e`（続けて §7.2 の統合テストも走らせる）で、リリース手順の一つ。** podman と runtime イメージが要るので `make test` は走らせない。`make test` はどちらも無しで走れるままにする（`make test-linux` は podman の無いコンテナの中で走らせる）。manifest とイメージの突き合わせはここにしかない。
+- **頼まれたら、飛ばさずに失敗する。** `DATA_TOOLBOX_TEST_PODMAN=1` があるのにバイナリかイメージが無ければテストは失敗する。飛ばすのは変数が無いときだけ。
+- **podman 無しで `make test` が捕まえるもの**: パッケージのタグ無しテストが、このスイートの設定をサーバ自身のローダで読み（`TestE2EConfigLoads`）、ずれの判定そのものを確かめる（`TestManifestDrift`）。タグ付きテストの型検査は `make vet-tags` が行う。
+- 理由: v0.6.0 から v0.8.4 まで、このスイートは起動できなかった。設定に ADR-0011 が削ったキーが残り、呼び出しが `work_dir` を渡していなかった。頼まれない限り飛ばす作りで、頼むリリース手順も無かったので、誰も気づかなかった。
 
 ## 8. Out of scope (Phase 1)
 

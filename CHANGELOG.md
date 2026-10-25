@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The podman-driven e2e suite runs again.** From v0.6.0 its config carried
+  `workspace.workspace_dir` and `workspace.allowed_paths`, which ADR-0011
+  removed, so the server refused to start and all 14 tests failed at once for
+  anyone who set `DATA_TOOLBOX_TEST_PODMAN=1`; its tool calls also named no
+  `work_dir`. Every call now passes its own, and the `allowed_paths` error case
+  is replaced by the credential floor (a `.env` file) and a missing `work_dir`.
+  `TestE2E_v020_ManifestDrift` now compares exact versions, not only names,
+  and the image's Python version. No shipped behaviour changes.
+- **It can no longer go quiet.** `make e2e` builds and runs it, then the
+  real-podman integration tests in `internal/`, and is a release step. One of
+  those, `TestIntegrationFullToolFlow`, still expected an `allowed_paths`
+  refusal for an ordinary file and failed; it now checks the `.env` floor. With `DATA_TOOLBOX_TEST_PODMAN=1` set, a missing binary or
+  image fails instead of skipping. `make test` loads the suite's config through
+  the server's own loader and tests the drift comparison, neither of which
+  needs podman.
+
 ## [0.8.4] - 2026-10-25
 
 ### Security
