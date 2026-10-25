@@ -14,13 +14,10 @@ import (
 //
 // We set timeout=3 sec and run a script that sleeps 30 sec.
 func TestE2E_Timeout(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 3)
+	cfg := writeConfig(t, 3)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -33,6 +30,7 @@ func TestE2E_Timeout(t *testing.T) {
 
 	start := time.Now()
 	body, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2eto",
 		"language":     "python",
 		"code":         "import time\ntime.sleep(30)\nprint('done')\n",

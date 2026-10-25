@@ -13,13 +13,10 @@ import (
 // runs a no-LIMIT query, and verifies the result has truncated=true plus
 // total=20001 (the extra COUNT picked up the real row count).
 func TestE2E_v040_QueryData_TruncatedTotal(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 120)
+	cfg := writeConfig(t, 120)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -32,6 +29,7 @@ func TestE2E_v040_QueryData_TruncatedTotal(t *testing.T) {
 
 	// Seed 20001 rows.
 	_, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-tt",
 		"language":     "python",
 		"code": `import duckdb
@@ -47,6 +45,7 @@ print("ok")
 	// Query without a LIMIT; the auto-LIMIT should trip and total should be
 	// populated via the additional COUNT.
 	body, isErr, err := h.CallTool("query_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-tt",
 		"sql":          "SELECT id FROM big",
 	}, 60*time.Second)
@@ -65,13 +64,10 @@ print("ok")
 // nonexistent one and asserts the structured error's details include
 // missing_table + available_tables_in_this_workspace.
 func TestE2E_v040_QueryData_TableNotFoundHint(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 60)
+	cfg := writeConfig(t, 60)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -84,6 +80,7 @@ func TestE2E_v040_QueryData_TableNotFoundHint(t *testing.T) {
 
 	// Two existing tables via execute_code.
 	if _, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-hint",
 		"language":     "python",
 		"code": `import duckdb
@@ -98,6 +95,7 @@ print("ok")
 
 	// Query a missing table.
 	body, isErr, err := h.CallTool("query_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-hint",
 		"sql":          "SELECT * FROM sales",
 	}, 30*time.Second)
@@ -124,13 +122,10 @@ print("ok")
 // preview without deleting, and that the same workspace is still usable
 // afterwards.
 func TestE2E_v040_DeleteWorkspace_DryRun(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 60)
+	cfg := writeConfig(t, 60)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -143,6 +138,7 @@ func TestE2E_v040_DeleteWorkspace_DryRun(t *testing.T) {
 
 	// Seed via execute_code so the workspace has some on-disk bytes.
 	if _, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-dry",
 		"language":     "python",
 		"code":         "open('/work/seed.csv','w').write('a,b\\n1,2\\n')\nprint('ok')\n",
@@ -152,6 +148,7 @@ func TestE2E_v040_DeleteWorkspace_DryRun(t *testing.T) {
 
 	// dry_run=true → preview only.
 	body, isErr, err := h.CallTool("delete_workspace", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-dry",
 		"dry_run":      true,
 	}, 30*time.Second)
@@ -179,7 +176,7 @@ func TestE2E_v040_DeleteWorkspace_DryRun(t *testing.T) {
 	}
 
 	// Verify the workspace is still alive afterwards.
-	body, _, err = h.CallTool("list_workspaces", map[string]any{}, 10*time.Second)
+	body, _, err = h.CallTool("list_workspaces", map[string]any{"work_dir": work}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("list_workspaces: %v", err)
 	}
@@ -191,13 +188,10 @@ func TestE2E_v040_DeleteWorkspace_DryRun(t *testing.T) {
 // TestE2E_v040_DescribeWorkspace_RoundTrip loads two tables via execute_code
 // then verifies describe_workspace returns both with their schemas.
 func TestE2E_v040_DescribeWorkspace_RoundTrip(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 60)
+	cfg := writeConfig(t, 60)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -209,6 +203,7 @@ func TestE2E_v040_DescribeWorkspace_RoundTrip(t *testing.T) {
 	}
 
 	if _, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-desc",
 		"language":     "python",
 		"code": `import duckdb
@@ -222,6 +217,7 @@ print("ok")
 	}
 
 	body, isErr, err := h.CallTool("describe_workspace", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v040-desc",
 	}, 30*time.Second)
 	if err != nil || isErr {

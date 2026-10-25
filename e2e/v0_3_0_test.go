@@ -13,13 +13,10 @@ import (
 // generates a matplotlib PNG inside /work, then attach_files returns it as
 // an inline image content block.
 func TestE2E_v030_AttachFiles_RoundTrip(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 60)
+	cfg := writeConfig(t, 60)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -32,6 +29,7 @@ func TestE2E_v030_AttachFiles_RoundTrip(t *testing.T) {
 
 	// 1) Generate the PNG.
 	_, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-attach",
 		"language":     "python",
 		"code": `import matplotlib
@@ -53,6 +51,7 @@ print("ok")
 	res, err := h.Call("tools/call", map[string]any{
 		"name": "attach_files",
 		"arguments": map[string]any{
+			"work_dir":     work,
 			"workspace_id": "e2e-attach",
 			"paths":        []string{"/work/plot.png", "missing.txt"},
 		},
@@ -98,13 +97,10 @@ print("ok")
 // TestE2E_v030_LoadFromWork_RoundTrip: execute_code emits a CSV in /work,
 // load_from_work table-izes it, query_data confirms the count.
 func TestE2E_v030_LoadFromWork_RoundTrip(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 60)
+	cfg := writeConfig(t, 60)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -117,6 +113,7 @@ func TestE2E_v030_LoadFromWork_RoundTrip(t *testing.T) {
 
 	// 1) Write a tiny CSV via execute_code.
 	_, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-lfw",
 		"language":     "python",
 		"code": `with open("/work/derived.csv", "w") as f:
@@ -130,6 +127,7 @@ print("ok")
 
 	// 2) load_from_work it as a DuckDB table.
 	loadBody, isErr, err := h.CallTool("load_from_work", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-lfw",
 		"file_path":    "/work/derived.csv",
 		"table_name":   "derived",
@@ -143,6 +141,7 @@ print("ok")
 
 	// 3) Confirm via query_data.
 	queryBody, isErr, err := h.CallTool("query_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-lfw",
 		"sql":          "SELECT SUM(b) AS total FROM derived",
 	}, 30*time.Second)
@@ -157,13 +156,10 @@ print("ok")
 // TestE2E_v030_LoadFromWork_RejectsOutsideWork: the load_from_work tool
 // must reject host paths (the load_data path) and any /work traversal.
 func TestE2E_v030_LoadFromWork_RejectsOutsideWork(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 30)
+	cfg := writeConfig(t, 30)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -175,9 +171,9 @@ func TestE2E_v030_LoadFromWork_RejectsOutsideWork(t *testing.T) {
 	}
 
 	cases := []struct {
-		name  string
-		path  string
-		hint  string
+		name string
+		path string
+		hint string
 	}{
 		{"host path", "/etc/passwd", "must start with /work/"},
 		{"escape", "/work/../escape.csv", "escapes /work"},
@@ -185,6 +181,7 @@ func TestE2E_v030_LoadFromWork_RejectsOutsideWork(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			body, isErr, err := h.CallTool("load_from_work", map[string]any{
+				"work_dir":     work,
 				"workspace_id": "e2e-lfw-reject",
 				"file_path":    c.path,
 				"table_name":   "x",

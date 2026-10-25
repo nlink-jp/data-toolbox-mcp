@@ -4,8 +4,8 @@ package e2e
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,11 +15,7 @@ import (
 // TestE2E_FullLifecycle exercises the protocol from initialize through every
 // tool's happy path. Skipped unless DATA_TOOLBOX_TEST_PODMAN=1.
 func TestE2E_FullLifecycle(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
 	dataDir := t.TempDir()
 	csv := filepath.Join(dataDir, "sample.csv")
@@ -27,7 +23,8 @@ func TestE2E_FullLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := writeConfig(t, dataDir, t.TempDir(), 30)
+	cfg := writeConfig(t, 30)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	// initialize
@@ -63,6 +60,7 @@ func TestE2E_FullLifecycle(t *testing.T) {
 
 	// tools/call load_data
 	loadRes, isErr, err := h.CallTool("load_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2elc",
 		"file_path":    csv,
 		"table_name":   "sample",
@@ -79,6 +77,7 @@ func TestE2E_FullLifecycle(t *testing.T) {
 
 	// tools/call query_data
 	queryRes, isErr, err := h.CallTool("query_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2elc",
 		"sql":          "SELECT a, b FROM sample ORDER BY a",
 	}, 30*time.Second)
@@ -97,6 +96,7 @@ func TestE2E_FullLifecycle(t *testing.T) {
 
 	// tools/call execute_code (use DuckDB inside python)
 	execRes, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2elc",
 		"language":     "python",
 		"code": "import duckdb\n" +
@@ -117,8 +117,15 @@ func TestE2E_FullLifecycle(t *testing.T) {
 	}
 }
 
-func requireBinary(t *testing.T) (string, bool) {
+// requireE2E returns the binary to drive. It skips only when the suite was
+// not asked for. Once DATA_TOOLBOX_TEST_PODMAN=1 says it was, a missing binary
+// or runtime image fails the test: a suite that skips when it cannot start is
+// how this one went unrun from v0.6.0 to v0.8.4.
+func requireE2E(t *testing.T) string {
 	t.Helper()
+	if os.Getenv("DATA_TOOLBOX_TEST_PODMAN") != "1" {
+		t.Skip("set DATA_TOOLBOX_TEST_PODMAN=1 to run podman-driven e2e tests (or `make e2e`)")
+	}
 	binary := os.Getenv("DATA_TOOLBOX_TEST_BINARY")
 	if binary == "" {
 		binary = "../dist/data-toolbox-mcp"
@@ -128,41 +135,10 @@ func requireBinary(t *testing.T) (string, bool) {
 		t.Fatalf("abs binary path: %v", err)
 	}
 	if _, err := os.Stat(abs); err != nil {
-		t.Skipf("binary not found at %s: %v (run `make build`)", abs, err)
-		return "", false
+		t.Fatalf("binary not found at %s: %v (run `make build`, or `make e2e`)", abs, err)
 	}
-	return abs, true
-}
-
-func requirePodman(t *testing.T) {
-	t.Helper()
-	if os.Getenv("DATA_TOOLBOX_TEST_PODMAN") != "1" {
-		t.Skip("set DATA_TOOLBOX_TEST_PODMAN=1 to run podman-driven e2e tests")
+	if err := exec.Command("podman", "image", "exists", e2eImage()).Run(); err != nil {
+		t.Fatalf("runtime image %s is not available to podman: %v (run `make runtime-image`)", e2eImage(), err)
 	}
-}
-
-func writeConfig(t *testing.T, dataDir, wsDir string, timeoutSec int) string {
-	t.Helper()
-	cfgDir := t.TempDir()
-	cfgPath := filepath.Join(cfgDir, "config.toml")
-	body := fmt.Sprintf(`
-[workspace]
-workspace_dir = %q
-allowed_paths = [%q]
-
-[container]
-image = "localhost/data-toolbox-runtime:latest"
-stop_on_exit = true
-
-[container.limits]
-timeout_seconds = %d
-network = "none"
-
-[query]
-default_row_limit = 20000
-`, wsDir, dataDir, timeoutSec)
-	if err := os.WriteFile(cfgPath, []byte(body), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	return cfgPath
+	return abs
 }

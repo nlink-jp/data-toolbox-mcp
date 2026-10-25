@@ -1,13 +1,16 @@
 //go:build e2e
 
 // Package e2e drives the data-toolbox-mcp binary via JSON-RPC over stdio,
-// simulating a real MCP client. Tests in this package are skipped from
-// `go test ./...`; run them with:
+// simulating a real MCP client. The podman-driven tests carry the e2e build
+// tag and run with:
 //
-//	go test -tags e2e ./e2e/...
+//	make e2e
 //
-// They also require DATA_TOOLBOX_TEST_PODMAN=1 and a built binary at
-// dist/data-toolbox-mcp (or override via DATA_TOOLBOX_TEST_BINARY).
+// which builds dist/data-toolbox-mcp and sets DATA_TOOLBOX_TEST_PODMAN=1. With
+// that set, a missing binary or runtime image fails the tests instead of
+// skipping them. DATA_TOOLBOX_TEST_BINARY overrides the binary and
+// DATA_TOOLBOX_TEST_IMAGE the image. The untagged tests (config_test.go,
+// drift_test.go) run in `go test ./...`.
 package e2e
 
 import (

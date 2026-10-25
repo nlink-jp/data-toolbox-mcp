@@ -14,18 +14,15 @@ import (
 // independent DuckDB state: table t loaded in workspace A is not visible in
 // workspace B. This is a sanity check for ADR-0001's per-workspace scoping.
 func TestE2E_SequentialWorkspaceIsolation(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
 	dataDir := t.TempDir()
 	csv := filepath.Join(dataDir, "iso.csv")
 	if err := os.WriteFile(csv, []byte("a\n1\n2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := writeConfig(t, dataDir, t.TempDir(), 30)
+	cfg := writeConfig(t, 30)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -38,6 +35,7 @@ func TestE2E_SequentialWorkspaceIsolation(t *testing.T) {
 
 	// Load into workspace A.
 	if _, isErr, err := h.CallTool("load_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "wsA",
 		"file_path":    csv,
 		"table_name":   "shared",
@@ -48,6 +46,7 @@ func TestE2E_SequentialWorkspaceIsolation(t *testing.T) {
 	// Querying the same table from workspace B must fail — wsB has its own
 	// DuckDB file where 'shared' does not exist.
 	body, isErr, err := h.CallTool("query_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "wsB",
 		"sql":          "SELECT * FROM shared",
 	}, 30*time.Second)

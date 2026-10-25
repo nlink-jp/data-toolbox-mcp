@@ -16,18 +16,15 @@ import (
 // TestE2E_v020_WorkspaceLifecycle drives list / load / describe / delete via
 // the live MCP server and verifies the workspace appears and disappears.
 func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
 	dataDir := t.TempDir()
 	csv := filepath.Join(dataDir, "tiny.csv")
 	if err := os.WriteFile(csv, []byte("a,b\n1,x\n2,y\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := writeConfig(t, dataDir, t.TempDir(), 30)
+	cfg := writeConfig(t, 30)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -70,7 +67,7 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 	}
 
 	// 3) list_workspaces (before load) — must NOT contain our test id
-	beforeBody, _, err := h.CallTool("list_workspaces", map[string]any{}, 10*time.Second)
+	beforeBody, _, err := h.CallTool("list_workspaces", map[string]any{"work_dir": work}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("list_workspaces (before): %v", err)
 	}
@@ -80,6 +77,7 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 
 	// 4) load_data → creates the workspace
 	if _, isErr, err := h.CallTool("load_data", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v020",
 		"file_path":    csv,
 		"table_name":   "tiny",
@@ -89,7 +87,7 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 
 	// 5) list_workspaces (after load) — must contain our test id with running container
 	//    AND its host_work_dir for the workspace (v0.2.1 amendment).
-	afterBody, _, err := h.CallTool("list_workspaces", map[string]any{}, 10*time.Second)
+	afterBody, _, err := h.CallTool("list_workspaces", map[string]any{"work_dir": work}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("list_workspaces (after): %v", err)
 	}
@@ -104,6 +102,7 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 
 	// 5b) execute_code — must return host_work_dir for the workspace (v0.2.1 amendment).
 	execBody, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v020",
 		"language":     "python",
 		"code":         "print('hello')\n",
@@ -115,16 +114,32 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 		!strings.Contains(string(execBody), `e2e-v020/work`) {
 		t.Errorf("execute_code result missing host_work_dir: %s", execBody)
 	}
+	// ADR-0011: host_work_dir is a path the caller can open, under the
+	// work_dir it named — link-resolved (on macOS /var is /private/var).
+	var ex struct {
+		HostWorkDir string `json:"host_work_dir"`
+	}
+	if err := json.Unmarshal(execBody, &ex); err != nil {
+		t.Fatalf("parse execute_code: %v", err)
+	}
+	realWork, err := filepath.EvalSymlinks(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(realWork, "e2e-v020", "work"); ex.HostWorkDir != want {
+		t.Errorf("host_work_dir = %q, want %q", ex.HostWorkDir, want)
+	}
 
 	// 6) delete_workspace
 	if _, isErr, err := h.CallTool("delete_workspace", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-v020",
 	}, 30*time.Second); err != nil || isErr {
 		t.Fatalf("delete_workspace: err=%v isErr=%v", err, isErr)
 	}
 
 	// 7) list_workspaces (after delete) — must not contain our test id
-	finalBody, _, err := h.CallTool("list_workspaces", map[string]any{}, 10*time.Second)
+	finalBody, _, err := h.CallTool("list_workspaces", map[string]any{"work_dir": work}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("list_workspaces (after delete): %v", err)
 	}
@@ -136,13 +151,10 @@ func TestE2E_v020_WorkspaceLifecycle(t *testing.T) {
 // TestE2E_v020_JapaneseMatplotlib exercises the ADR-0007 font setup end-to-end
 // by asking execute_code to render a Japanese-titled chart with strict warnings.
 func TestE2E_v020_JapaneseMatplotlib(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 60)
+	cfg := writeConfig(t, 60)
+	work := t.TempDir()
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -154,6 +166,7 @@ func TestE2E_v020_JapaneseMatplotlib(t *testing.T) {
 	}
 
 	body, isErr, err := h.CallTool("execute_code", map[string]any{
+		"work_dir":     work,
 		"workspace_id": "e2e-jp",
 		"language":     "python",
 		"code": `import warnings
@@ -184,18 +197,19 @@ print("ok")
 	}
 }
 
-// TestE2E_v020_ManifestDrift compares the package set returned by
-// describe_runtime against the actual `pip list` output inside the runtime
-// image. Names only — version-pin drift is checked separately via the
-// embed test in cmd/.
+// TestE2E_v020_ManifestDrift compares what describe_runtime advertises with
+// what the runtime image really holds: every declared package must be
+// installed at exactly the declared version, and the image's Python must be
+// the declared one.
+//
+// The unit tests hold the manifest to runtime/requirements.lock
+// (TestManifestMatchesLock); this is the only check that the image built from
+// that lock still agrees, which an image built before the last lock change
+// does not.
 func TestE2E_v020_ManifestDrift(t *testing.T) {
-	binary, ok := requireBinary(t)
-	if !ok {
-		return
-	}
-	requirePodman(t)
+	binary := requireE2E(t)
 
-	cfg := writeConfig(t, t.TempDir(), t.TempDir(), 30)
+	cfg := writeConfig(t, 30)
 	h := Start(t, binary, cfg)
 
 	if _, err := h.Call("initialize", map[string]any{
@@ -206,51 +220,59 @@ func TestE2E_v020_ManifestDrift(t *testing.T) {
 		t.Fatalf("initialize: %v", err)
 	}
 
-	body, _, err := h.CallTool("describe_runtime", map[string]any{}, 5*time.Second)
-	if err != nil {
-		t.Fatalf("describe_runtime: %v", err)
+	body, isErr, err := h.CallTool("describe_runtime", map[string]any{}, 5*time.Second)
+	if err != nil || isErr {
+		t.Fatalf("describe_runtime: err=%v isErr=%v body=%s", err, isErr, body)
 	}
 	var rt struct {
-		Packages []struct {
-			Name string `json:"name"`
-		} `json:"packages"`
-		ContainerImage string `json:"container_image"`
+		PythonVersion  string            `json:"python_version"`
+		Packages       []declaredPackage `json:"packages"`
+		ContainerImage string            `json:"container_image"`
 	}
 	if err := json.Unmarshal(body, &rt); err != nil {
 		t.Fatalf("parse describe_runtime: %v", err)
 	}
-
-	declared := map[string]bool{}
-	for _, p := range rt.Packages {
-		declared[strings.ToLower(p.Name)] = true
-	}
-	if len(declared) == 0 {
+	if len(rt.Packages) == 0 {
 		t.Fatalf("describe_runtime returned no packages")
 	}
 
-	// Ask the live container for its installed packages.
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "podman", "run", "--rm",
-		rt.ContainerImage, "pip", "list", "--format=json").Output()
-	if err != nil {
-		t.Fatalf("podman pip list: %v", err)
+	// Ask the image itself, with no network: nothing here needs one.
+	installed := map[string]string{}
+	for _, p := range podmanJSON[[]struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}](t, rt.ContainerImage, "pip", "list", "--format=json") {
+		installed[pipName(p.Name)] = p.Version
 	}
-	var pipList []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(out, &pipList); err != nil {
-		t.Fatalf("parse pip list: %v", err)
-	}
-	installed := map[string]bool{}
-	for _, p := range pipList {
-		installed[strings.ToLower(p.Name)] = true
+	for _, problem := range manifestDrift(rt.Packages, installed) {
+		t.Errorf("%s: %s (rebuild the image: make runtime-image)", rt.ContainerImage, problem)
 	}
 
-	// Every declared package must actually be installed.
-	for name := range declared {
-		if !installed[name] {
-			t.Errorf("manifest declares %q but it is not installed in %s", name, rt.ContainerImage)
-		}
+	py := podmanJSON[string](t, rt.ContainerImage, "python", "-c",
+		"import json, platform; print(json.dumps(platform.python_version()))")
+	if py != rt.PythonVersion && !strings.HasPrefix(py, rt.PythonVersion+".") {
+		t.Errorf("manifest declares python %s but %s runs %s", rt.PythonVersion, rt.ContainerImage, py)
 	}
+}
+
+// podmanJSON runs a command in a throwaway container from image, with no
+// network, and decodes its stdout as JSON.
+func podmanJSON[T any](t *testing.T, image string, cmd ...string) T {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	args := append([]string{"run", "--rm", "--network=none", image}, cmd...)
+	out, err := exec.CommandContext(ctx, "podman", args...).Output()
+	if err != nil {
+		var stderr []byte
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = ee.Stderr
+		}
+		t.Fatalf("podman %s: %v %s", strings.Join(args, " "), err, stderr)
+	}
+	var v T
+	if err := json.Unmarshal(out, &v); err != nil {
+		t.Fatalf("parse output of %v: %v (%q)", cmd, err, out)
+	}
+	return v
 }
