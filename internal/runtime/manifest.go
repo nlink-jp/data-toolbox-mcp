@@ -39,7 +39,7 @@ var Default = Manifest{
 		{Name: "polars", VersionConstraint: "~=1.8"},
 		{Name: "pyarrow", VersionConstraint: ">=18.0"},
 		{Name: "matplotlib", VersionConstraint: "~=3.10"},
-		{Name: "Pillow", VersionConstraint: "~=11.0"},
+		{Name: "Pillow", VersionConstraint: ">=12.1.1"},
 	},
 	Fonts: []string{
 		"Noto Sans CJK JP",

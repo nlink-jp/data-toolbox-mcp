@@ -15,18 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `python:3.12-slim` stayed at whatever copy was pulled first — Python itself
   included. The build is now `podman build --no-cache --pull=newer`, and the
   Dockerfile runs `apt-get upgrade -y` before its install. **Rebuild the image
-  once** with `data-toolbox-mcp build-runtime`; the previous image stays
-  untagged until `podman image prune`. ADR-0005 is amended.
+  once** with `data-toolbox-mcp build-runtime`, then **restart the MCP server**
+  (or its client): a workspace container that is already running keeps the
+  image it started from. The image built by the previous version keeps its
+  version tag; remove it with
+  `podman rmi localhost/data-toolbox-runtime:<old version>`. ADR-0005 is
+  amended.
 - **pyarrow is `>=18.0` instead of `~=18.0`.** CVE-2026-111497 (an
   out-of-bounds write in the Brotli decoder) affects the Brotli 1.0.9 that
   Arrow 18 bundles, and Arrow ships fixes only in new major versions, so the old
   pin could never take one. A rebuild now installs pyarrow 26.0.0, which is not
   fixed yet either; the next rebuild after Arrow's fixed release takes it.
-  **Not fixed by this release:** the Brotli 1.1.0 that DuckDB vendors for
-  parquet (upstream fix unmerged; `duckdb~=1.1` takes it on rebuild once a
-  fixed 1.x ships) and Pillow's bundled `libbrotlidec` 1.1.0 (WOFF2 fonts only,
-  not reached in this image). ADR-0007 is amended.
-
+- **Pillow is `>=12.1.1` instead of `~=11.0`.** The 11 line ended at 11.3.0,
+  which has CVE-2026-25990 (out-of-bounds write loading a crafted PSD, CVSS
+  7.5), fixed only in 12.1.1. A rebuild now installs Pillow 13.0.0; Japanese
+  matplotlib labels still render without warnings.
+- **The image build fails on a broken package combination.** With floors, a
+  rebuild can resolve versions nobody has run together, and `pip check` does
+  not notice a pyarrow that pandas 2.x cannot use. The Dockerfile now runs
+  `pip check` and a parquet / DataFrame / DuckDB / polars / matplotlib round
+  trip after its install. A unit test holds the Dockerfile's version
+  constraints to the ones `describe_runtime` advertises.
+- **Not fixed by this release:** the Brotli 1.1.0 that DuckDB vendors for
+  parquet (upstream fix unmerged; `duckdb~=1.1` resolves to the 1.5 line and
+  takes a fix only if it ships there) and the `libbrotlidec` 1.2.0 Pillow 13
+  bundles for WOFF2 fonts (not reached in practice; the floor takes a fixed
+  Pillow on rebuild). pandas, polars and DuckDB stay on their current major
+  versions, so a fix shipped only in their next major will not arrive by
+  rebuilding; no known CVE applies to the installed versions. ADR-0007 is
+  amended.
 - **The Linux archives no longer carry macOS file metadata.** macOS `tar` wrote
   each bundled file's extended attributes (`com.apple.provenance`, and a Dropbox
   attribute where the tree is synced) into the `.tar.gz` twice: as AppleDouble

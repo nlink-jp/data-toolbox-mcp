@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-05
 - Driver: magi
-- Revisions: 2026-10-25 — pyarrow の指定を `~=18.0` から下限だけ（`>=18.0`）にした。上流で未修正の Brotli を記録した（v0.8.3）
+- Revisions: 2026-10-25 — pyarrow（`>=18.0`）と Pillow（`>=12.1.1`）を `~=` から下限だけの指定にした。入れた組み合わせをビルドで確かめる。止まっている系列と、上流で未修正の Brotli を記録した（v0.8.3）
 - Generalises to: nlink-jp 内で Python サンドボックスを持つ他プロジェクト (mcp-skeleton 派生等)
 
 ---
@@ -117,12 +117,14 @@ v0.1.0: 692MB → v0.2.0: 推定 850-900MB (fonts-noto-cjk ~150MB + matplotlib +
 - Python 3.13 → 3.12 ダウングレード: ユーザー Python コードが 3.13 専用構文 (生成式の制限緩和等) を使えなくなる。実用上の影響はほぼゼロ
 - 今後 scipy / scikit-learn / seaborn の追加要求が出るたびに ADR を起こす運用負荷 (v0.2.0 で全部入れない方針なので)
 
-**改定（2026-10-25、v0.8.3）: pyarrow は下限だけを指定する。**
+**改定（2026-10-25、v0.8.3）: pyarrow と Pillow は下限だけを指定し、入れた組み合わせをビルド時に確かめる。**
 
 - CVE-2026-111497 は Brotli デコーダの境界外書き込みである（影響 1.0.3〜1.2.0）。`load_data` は利用者が渡した `.parquet` を DuckDB の `read_parquet` で読み、`execute_code` からは pyarrow や pandas でも読めるので、Brotli 圧縮の parquet はデコーダに届く。
 - Arrow 18 は Brotli 1.0.9 を同梱する（`apache-arrow-18.1.0` の `cpp/thirdparty/versions.txt`）。Apache Arrow は修正を新しいメジャー版でしか出さない。Brotli の更新（apache/arrow#55167、2026-10-25 時点で未マージ）も main 向けなので、`pyarrow~=18.0` のままでは決して取り込めない。pyarrow を `>=18.0` にし、作り直せば Arrow の出した最新のメジャー版が入るようにした。v0.8.3 の時点では 26.0.0 が入り、これもまだ未修正だが、下限指定にしておくことで次の作り直しで修正を取り込める。
-- 他のパッケージは `~=` のままにする。2026-10-25 時点で pandas 3・polars 2・DuckDB 2・Pillow 13 が PyPI に出ているが、どれに上げても LLM が書く分析コードの API が変わり、パッチ版で行う変更ではない。pyarrow は安定したインターフェイス（DataFrame と Arrow の相互変換、parquet の入出力）で使われる。pyarrow 26.0.0・pandas 2.3.3・polars 1.44.2・DuckDB 1.5.6 の組み合わせで `pip check` は問題なく、parquet・DataFrame・DuckDB の往復は pyarrow 18.1.0 のときと同じ動きだった（両方のイメージで実測）。
-- **このリリースで直らないもの:** DuckDB は parquet 用に `third_party/brotli` で Brotli 1.1.0 を同梱している（v1.1.3・v1.4.1・v1.5.1 のどれも同じ）。修正（duckdb/duckdb#27791）は 2026-10-25 時点で未マージである。`duckdb~=1.1` は 1 系の最新に追従するので、修正入りの 1.x が出れば作り直しで入る。Pillow 11.3.0 は WOFF2 フォント用に `libbrotlidec` 1.1.0 を同梱する。このイメージは入れてある Noto CJK フォントしか描画しないため、実際にはこの経路に届かない。新しい Pillow が修正済みの Brotli を同梱しているかは確かめていない。
+- **Pillow も下限だけ（`>=12.1.1`）にする。** 11 系は 11.3.0 で終わっており、CVE-2026-25990（細工した PSD の読み込みで境界外書き込み、CVSS 7.5、10.3.0〜12.1.1 未満）の修正は 12.1.1 にしか入っていない。`Image.open` はファイルの中身からデコーダを選ぶので、LLM が書いたコードが利用者の渡した画像を開けば、ファイル名に関係なくこのデコーダに届く。Pillow も Arrow と同じく最新の系列でしか修正を出さない。現時点で作り直すと 13.0.0 が入る。日本語ラベルは `python -W error::UserWarning`（この ADR の当初の確認）でも引き続き警告なく描画されることを、13.0.0 で確かめ直した。
+- **他のパッケージは `~=` のままにし、それぞれの系列は止まっていると認める。** pandas の 2 系は 2.3.3 で終わり、polars 1 系と DuckDB 1 系もそれぞれ 1 つ前のメジャー版である（2026-10-25 時点で pandas 3・polars 2・DuckDB 2 が PyPI に出ている）。matplotlib の `~=3.10` は止まっておらず、最新の 3.11.2 に解決される。どれに上げても LLM が書くコードの API が変わり、パッチ版で行う変更ではない。そのため、次のメジャー版にしか入らない修正は作り直しでは届かない。2026-10-25 時点で、入っている版に当てはまる既知の CVE は無かった。cve-lookup の CPE 照合で、pandas・DuckDB・matplotlib はずっと古い版向けの CVE しか返さなかった。polars は照合の対象外で、CVE が無いという根拠にはならない。当てはまる CVE が出たら見直す。
+- **下限指定にすると、作り直しのたびに誰も動かしていない組み合わせが解決されうる。** `pip check` は、pandas 2 系で使えなくなった pyarrow を見逃す（pandas は pyarrow の上限を宣言していない）。そこで Dockerfile は、install の最後にビルドを落とす確認を行う。`pip check` に続けて、Brotli 圧縮の parquet の書き込みと読み込み、DataFrame と Arrow の相互変換、parquet と DataFrame に対する DuckDB、両方に対する polars、Pillow で開く matplotlib の PNG を確かめる。pyarrow 26.0.0・pandas 2.3.3・polars 1.44.2・DuckDB 1.5.6・Pillow 13.0.0 で通った。`TestDockerfilePinsMatchManifest` は Dockerfile の版指定をマニフェストと突き合わせ、pyarrow か Pillow が `~=` に戻ったら落ちる。
+- **このリリースで直らないもの:** DuckDB は parquet 用に `third_party/brotli` で Brotli 1.1.0 を同梱している（v1.1.3・v1.4.1・v1.5.1 のどれも同じ）。修正（duckdb/duckdb#27791）は 2026-10-25 時点で未マージである。`duckdb~=1.1` は 1 系の最も新しい版、つまり 1.5 系（1.5.6）に解決され、1.4 系はそれと並行して保守されている。作り直しで修正が入るのは、修正が 1 系の最も新しい版として出た場合に限る。1.4 系と 2 系にしか出なければ、この指定を判断し直す必要がある。Pillow 13.0.0 は WOFF2 フォント用に `libbrotlidec` 1.2.0（`BrotliDecoderVersion` で読んだ値）を同梱しており、これも影響範囲内である。このイメージは入れてある Noto CJK フォントしか描画しないため実際にはこの経路に届かず、修正済みの Brotli を同梱した Pillow が出れば、下限指定によって次の作り直しで入る。
 
 ## Alternatives Considered
 
