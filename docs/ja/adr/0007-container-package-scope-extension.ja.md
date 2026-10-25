@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-05
 - Driver: magi
-- Revisions: 2026-10-25 — pyarrow（`>=18.0`）と Pillow（`>=12.1.1`）を `~=` から下限だけの指定にした。入れた組み合わせをビルドで確かめる。止まっている系列と、上流で未修正の Brotli を記録した（v0.8.3）
+- Revisions: 2026-10-25 — pyarrow（`>=18.0`）と Pillow（`>=12.1.1`）を `~=` から下限だけの指定にした。入れた組み合わせをビルドで確かめる。止まっている系列と、上流で未修正の Brotli を記録した（v0.8.3）; その指定から解決したハッシュつきロックだけを入れるようにした（v0.8.4）
 - Generalises to: nlink-jp 内で Python サンドボックスを持つ他プロジェクト (mcp-skeleton 派生等)
 
 ---
@@ -125,6 +125,15 @@ v0.1.0: 692MB → v0.2.0: 推定 850-900MB (fonts-noto-cjk ~150MB + matplotlib +
 - **他のパッケージは `~=` のままにし、それぞれの系列は止まっていると認める。** pandas の 2 系は 2.3.3 で終わり、polars 1 系と DuckDB 1 系もそれぞれ 1 つ前のメジャー版である（2026-10-25 時点で pandas 3・polars 2・DuckDB 2 が PyPI に出ている）。matplotlib の `~=3.10` は止まっておらず、最新の 3.11.2 に解決される。どれに上げても LLM が書くコードの API が変わり、パッチ版で行う変更ではない。そのため、次のメジャー版にしか入らない修正は作り直しでは届かない。2026-10-25 時点で、入っている版に当てはまる既知の CVE は無かった。cve-lookup の CPE 照合で、pandas・DuckDB・matplotlib はずっと古い版向けの CVE しか返さなかった。polars は照合の対象外で、CVE が無いという根拠にはならない。当てはまる CVE が出たら見直す。
 - **下限指定にすると、作り直しのたびに誰も動かしていない組み合わせが解決されうる。** `pip check` は、pandas 2 系で使えなくなった pyarrow を見逃す（pandas は pyarrow の上限を宣言していない）。そこで Dockerfile は、install の最後にビルドを落とす確認を行う。`pip check` に続けて、Brotli 圧縮の parquet の書き込みと読み込み、DataFrame と Arrow の相互変換、parquet と DataFrame に対する DuckDB、両方に対する polars、Pillow で開く matplotlib の PNG を確かめる。pyarrow 26.0.0・pandas 2.3.3・polars 1.44.2・DuckDB 1.5.6・Pillow 13.0.0 で通った。`TestDockerfilePinsMatchManifest` は Dockerfile の版指定をマニフェストと突き合わせ、pyarrow か Pillow が `~=` に戻ったら落ちる。
 - **このリリースで直らないもの:** DuckDB は parquet 用に `third_party/brotli` で Brotli 1.1.0 を同梱している（v1.1.3・v1.4.1・v1.5.1 のどれも同じ）。修正（duckdb/duckdb#27791）は 2026-10-25 時点で未マージである。`duckdb~=1.1` は 1 系の最も新しい版、つまり 1.5 系（1.5.6）に解決され、1.4 系はそれと並行して保守されている。作り直しで修正が入るのは、修正が 1 系の最も新しい版として出た場合に限る。1.4 系と 2 系にしか出なければ、この指定を判断し直す必要がある。Pillow 13.0.0 は WOFF2 フォント用に `libbrotlidec` 1.2.0（`BrotliDecoderVersion` で読んだ値）を同梱しており、これも影響範囲内である。このイメージは入れてある Noto CJK フォントしか描画しないため実際にはこの経路に届かず、修正済みの Brotli を同梱した Pillow が出れば、下限指定によって次の作り直しで入る。
+
+**改定（2026-10-25、v0.8.4）: イメージはハッシュつきのロックだけから入れる。**
+
+- v0.8.3 の下限指定はそのまま install されていたので、作り直すたびに最新の pyarrow と Pillow、そして `~=` を通して他のすべての最新パッチ版が、PyPI から検証なしで入っていた。どれか 1 つでも不正な版が公開されれば、次に作り直した全利用者に届いた。`~=` も防御にはなっていなかった。この種の攻撃の多くは新しいパッチ版を出す形で、`~=` はそれを受け入れる。
+- パッケージは `runtime/requirements.in` に書き（v0.8.3 の下限指定と `~=` はそのままここに移した）、`make runtime-lock`（`uv pip compile --universal --python-version 3.12 --generate-hashes`）で `runtime/requirements.lock` に解決する。依存を含む 18 パッケージそれぞれが 1 つの版に固定され、全配布物の SHA256 が書かれる。Dockerfile はロックをコピーし、`pip install --require-hashes --no-deps -r` で入れる。pip はハッシュが一覧に無いファイルを拒否し、ロックに書かれていないものは取得しない。ベースは digest で固定する（ADR-0005、v0.8.4 改定）。
+- 実測: ハッシュを 1 つ書き換えたロックは拒否された（「THESE PACKAGES DO NOT MATCH THE HASHES」）。18 パッケージの x86_64 用 wheel はすべてロックのハッシュで取得でき、amd64 でも arm64 と同じく通る。`make runtime-lock` はコミットしたロックをバイト単位で再現する。入る版は v0.8.3 と同じ（pyarrow 26.0.0・Pillow 13.0.0・pandas 2.3.3・polars 1.44.2・DuckDB 1.5.6・matplotlib 3.11.2）。
+- **修正の届け方:** ロックを作り直し、版の差分を確かめ、イメージを作り直し（ビルド時の往復確認が通ること）、`internal/runtime/manifest.go` を更新してリリースする。`describe_runtime` は正確な版（`==`）を返す。CVE-2026-111497 の Brotli の修正も、Arrow や DuckDB から出たらこの流れで届ける。利用者の作り直しで入るわけではない。`requirements.in` の下限指定は引き続き意味がある。次の `make runtime-lock` で修正版に届くのはそのためである。
+- `TestLockPinsEveryPackageWithHashes`・`TestManifestMatchesLock`・`TestDockerfileInstallsOnlyFromHashedLock`・`TestLockInputKeepsFloors` がこれを押さえる。v0.8.3 の `TestDockerfilePinsMatchManifest` はこれらに置き換えた。
+- ロックの解決には保守者の手元で `uv` を使う。組織の Python プロジェクトで既に使っている開発時の道具で、イメージには入らない。ハッシュを検証する pip は、digest で固定したベースに入っているものである。
 
 ## Alternatives Considered
 

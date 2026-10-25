@@ -1,4 +1,8 @@
-FROM python:3.12-slim
+# Pinned by digest, not by tag: a tag moves, and what it moves to was never
+# checked by anyone. This is the multi-arch index digest (amd64 and arm64
+# both resolve through it). A new base reaches the image only when this line
+# is changed and released (ADR-0005, amended v0.8.4).
+FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 
 # OS packages:
 #   fonts-noto-cjk  — CJK glyph rendering for matplotlib (ADR-0007)
@@ -6,9 +10,9 @@ FROM python:3.12-slim
 #                     [container.limits] network is flipped to "bridge"
 #
 # Upgrade before installing: installing the two packages above never touches
-# what python:3.12-slim already contains, so without it a rebuild keeps the
-# base's libraries at whatever versions the pulled image had (ADR-0005,
-# amended v0.8.3).
+# what the base already contains. apt verifies the Debian archive's
+# signatures, so this takes Debian's security fixes without trusting an
+# unverified download (ADR-0005, amended v0.8.3 and v0.8.4).
 RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update \
     && apt-get upgrade -y \
@@ -18,25 +22,21 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && rm -rf /var/lib/apt/lists/*
 
 # Python data-analysis stack + plotting (ADR-0003 + ADR-0007).
-# Pillow is pulled in transitively by matplotlib, but pinned explicitly
-# so describe_runtime can advertise it as guaranteed.
 #
-# pyarrow and Pillow take a floor, not a compatible-release pin: both ship
-# fixes only in their newest release line, so ~=18.0 / ~=11.0 could never take
-# one (CVE-2026-111497 in Arrow's bundled Brotli; CVE-2026-25990, fixed in
-# Pillow 12.1.1). ADR-0007, amended v0.8.3.
-RUN pip install --no-cache-dir \
-        duckdb~=1.1 \
-        pandas~=2.2 \
-        polars~=1.8 \
-        'pyarrow>=18.0' \
-        matplotlib~=3.10 \
-        'Pillow>=12.1.1'
+# Installed only from requirements.lock: every package, dependencies
+# included, at one version, checked against its SHA256. --require-hashes
+# refuses anything whose hash is not in the lock, and --no-deps keeps pip from
+# fetching a dependency the lock does not name. The lock is regenerated from
+# requirements.in with `make runtime-lock`, reviewed, and released — a rebuild
+# never resolves versions by itself (ADR-0007, amended v0.8.4).
+COPY requirements.lock /tmp/requirements.lock
+RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/requirements.lock \
+    && rm -f /tmp/requirements.lock
 
-# A floor lets a rebuild resolve a combination nobody has run, and pip check
-# does not catch a pyarrow that pandas 2.x no longer works with. Fail the build
-# rather than ship it: exercise the paths the tools use (parquet in and out,
-# DataFrame <-> Arrow, DuckDB over both, a matplotlib PNG through Pillow).
+# Fail the build if the locked combination does not work: exercise the paths
+# the tools use (parquet in and out, DataFrame <-> Arrow, DuckDB over both, a
+# matplotlib PNG through Pillow). This is the check a regenerated lock must
+# pass before it is released.
 RUN pip check && python -c "\
 import duckdb, pandas as pd, polars as pl, pyarrow as pa, pyarrow.parquet as pq; \
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; from PIL import Image; \

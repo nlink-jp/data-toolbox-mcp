@@ -34,12 +34,15 @@ var Default = Manifest{
 	PythonVersion:  "3.12",
 	ContainerImage: "localhost/data-toolbox-runtime:latest",
 	Packages: []Package{
-		{Name: "duckdb", VersionConstraint: "~=1.1"},
-		{Name: "pandas", VersionConstraint: "~=2.2"},
-		{Name: "polars", VersionConstraint: "~=1.8"},
-		{Name: "pyarrow", VersionConstraint: ">=18.0"},
-		{Name: "matplotlib", VersionConstraint: "~=3.10"},
-		{Name: "Pillow", VersionConstraint: ">=12.1.1"},
+		// Exact versions from runtime/requirements.lock, which the image
+		// installs with --require-hashes (ADR-0007, amended v0.8.4).
+		// TestManifestMatchesLock fails when the two disagree.
+		{Name: "duckdb", VersionConstraint: "==1.5.6"},
+		{Name: "pandas", VersionConstraint: "==2.3.3"},
+		{Name: "polars", VersionConstraint: "==1.44.2"},
+		{Name: "pyarrow", VersionConstraint: "==26.0.0"},
+		{Name: "matplotlib", VersionConstraint: "==3.11.2"},
+		{Name: "Pillow", VersionConstraint: "==13.0.0"},
 	},
 	Fonts: []string{
 		"Noto Sans CJK JP",

@@ -21,9 +21,11 @@ var buildRuntimeCmd = &cobra.Command{
 	Long: `Unpack the embedded Dockerfile to a temp directory and run ` + "`podman build`" + ` to
 produce localhost/data-toolbox-runtime:<version> (and the :latest tag).
 
-Every build starts from scratch, without the layer cache, and pulls the base
-image when the registry has a newer one, so re-running build-runtime takes
-Debian, Python and package security updates.
+The base image is pinned by digest and the Python packages are installed
+from a hash-locked list, so the image is what this release was tested with.
+Every build starts without the layer cache, so re-running build-runtime takes
+Debian's signed security updates; new Python packages arrive with a new
+release of this binary.
 
 See ADR-0005 for the rationale (local-build distribution).`,
 	RunE: runBuildRuntime,
@@ -82,14 +84,15 @@ func runBuildRuntime(cmd *cobra.Command, args []string) error {
 
 // buildArgs is the argv after `podman` for building the runtime image.
 //
-// A rebuild exists to take security updates, and the embedded Dockerfile does
-// not change between rebuilds, so the build bypasses the layer cache
-// (--no-cache) — with the cache the apt and pip layers are reused and nothing
-// is updated. The base is a tag, not a digest, so --pull=newer also refreshes
-// a local python:3.12-slim that the registry has since replaced (ADR-0005,
-// amended v0.8.3).
+// The base is digest-pinned and the Python packages come from a hash-locked
+// list, so a rebuild reproduces exactly what was released; the only thing it
+// takes on its own is Debian's signed security updates through
+// `apt-get upgrade`. That needs the layer cache bypassed (--no-cache): the
+// embedded Dockerfile does not change between rebuilds, so a cached build
+// would reuse the apt layer. There is deliberately no --pull policy — a
+// digest needs none (ADR-0005, amended v0.8.4).
 func buildArgs(contextDir string, tags []string) []string {
-	args := []string{"build", "--no-cache", "--pull=newer"}
+	args := []string{"build", "--no-cache"}
 	for _, t := range tags {
 		args = append(args, "-t", t)
 	}

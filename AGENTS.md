@@ -12,6 +12,7 @@ DuckDB + containerized Python execution exposed as a single-binary MCP server (s
 - `make test` — runs all Go unit tests
 - `make test-linux` — the same suite inside a Linux container (podman/docker)
 - `make runtime-image` — builds the Podman runtime image (wraps `data-toolbox-mcp build-runtime`)
+- `make runtime-lock` — re-resolves `runtime/requirements.in` into the hash-locked `runtime/requirements.lock` (needs `uv`; review the diff before committing)
 - `make build-all` — cross-compile for darwin/linux × arm64/amd64
 - `make verify-release` — gate: notarized, fresh, runs at this version, clean linux archives (run before upload)
 
@@ -24,6 +25,7 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 | `main.go` | Entry point, delegates to cmd.Execute() | A |
 | `cmd/` | cobra subcommands (root / serve / build-runtime / doctor / version; `--version` flag too — the org homebrew formula tests it) | A |
 | `runtime/Dockerfile` | Source for the Python runtime container image (embedded via go:embed in Track E) | E |
+| `runtime/requirements.in` / `runtime/requirements.lock` | Package constraints, and the hash-locked list resolved from them that the image installs (embedded alongside the Dockerfile) | v0.8.4 |
 | `internal/transport/` | MCP stdio JSON-RPC framing | B |
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B |
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call); `SetInstructions` fills the initialize `instructions` field | B |
@@ -60,11 +62,11 @@ Direct `go build` is **forbidden** by project convention; the wrapped form sets 
 - `query_data` auto-applies `LIMIT [query] default_row_limit` (= 20000) when SQL has no LIMIT. Don't strip user-supplied LIMITs.
 - All tools accept `workspace_id` as their first argument. Never silently default it.
 - For container lifecycle: every container is labeled `app=data-toolbox-mcp`. Orphan detection filters on this label.
-- **The runtime build bypasses the cache and refreshes the base** (`podman build --no-cache --pull=newer` from `buildArgs`, plus `apt-get upgrade -y` in the Dockerfile; ADR-0005 amendment v0.8.3). The embedded Dockerfile never changes between rebuilds, so with the cache a rebuild updated nothing, and the `python:3.12-slim` tag stayed at the first pulled copy. `TestBuildArgsBypassCacheAndRefreshBase` and `TestDockerfileUpgradesBaseBeforeInstall` hold it.
-- **pyarrow (`>=18.0`) and Pillow (`>=12.1.1`) are floors, the rest are `~=`** (ADR-0007 amendment v0.8.3): both ship fixes only in their newest line. Do not "tidy" them back to `~=` — `TestDockerfilePinsMatchManifest` fails if you do, and also fails when the Dockerfile's constraints and `internal/runtime/manifest.go` disagree. Because floors can resolve an untested combination, the Dockerfile ends its install with `pip check` and a parquet / DataFrame / DuckDB / polars / matplotlib round trip that fails the build.
+- **The runtime image is reproducible and verified** (ADR-0005 / ADR-0007 amendments v0.8.4): `FROM python:3.12-slim@sha256:<index digest>`, `podman build --no-cache` from `buildArgs` (no pull policy — the cache is bypassed only so `apt-get upgrade -y` takes Debian's signed updates), and `pip install --require-hashes --no-deps -r requirements.lock`. Never install a package any other way, and never put `--pull=newer` back: v0.8.3 did both and every rebuild fetched unverified code. `TestDockerfilePinsBaseByDigest`, `TestDockerfileInstallsOnlyFromHashedLock`, `TestLockPinsEveryPackageWithHashes` and `TestBuildArgsBypassCache` hold it.
+- **Updating Python packages is a release**: edit `runtime/requirements.in` if needed, `make runtime-lock`, review the version diff, update `internal/runtime/manifest.go` (exact `==` versions; `TestManifestMatchesLock` fails otherwise), rebuild the image (the build-time round trip must pass) and release. pyarrow (`>=18.0`) and Pillow (`>=12.1.1`) stay floors in `requirements.in` — both ship fixes only in their newest line, and `TestLockInputKeepsFloors` fails on `~=`. A new base digest is the same kind of change.
 - **A rebuild does not reach running workspaces**: `Manager.Ensure` reuses a container by name without checking its image. Restart the server after `build-runtime`.
 - **The podman-driven e2e suite cannot start since v0.6.0**: `e2e/lifecycle_test.go` `writeConfig` writes `workspace_dir` / `allowed_paths`, keys ADR-0011 removed, and the tools now require `work_dir`. It is skipped unless `DATA_TOOLBOX_TEST_PODMAN=1`, which is how it went unnoticed. Until it is repaired, verify image changes with the opt-in real-podman integration test below and a real MCP session.
-- **Dockerfile + manifest sync**: when you change `runtime/Dockerfile`, update `internal/runtime/manifest.go` in the same commit. The e2e manifest-drift test catches name-set mismatches but not silently mis-pinned versions.
+- **Lock + manifest sync**: when `runtime/requirements.lock` changes, update `internal/runtime/manifest.go` in the same commit; `TestManifestMatchesLock` compares the exact versions.
 - **matplotlib font order matters**: matplotlib 3.10's Agg backend renders all text with the first loadable font in `font.sans-serif`. `Noto Sans CJK JP` MUST be first (it covers Latin glyphs too, so no side effect on English).
 - **`attach_files` does not Ensure the workspace**: it only reads from disk (no Podman). Calling it on a workspace_id that was never `Ensure`'d will just report missing files. This is by design — attach is a pure-host operation.
 - **`load_from_work` requires `/work/` prefix**: bare relative paths or any other absolute path are rejected with `invalid_arguments`. Internally it strips `/work/` and resolves against `<host_work_dir>` with prefix re-check; never trust the `/work/` prefix alone for security.

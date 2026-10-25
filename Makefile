@@ -15,7 +15,7 @@ NOTARY_PROFILE    ?= nlink-jp-notary
 # darwin ships arm64 only (no amd64, no universal). linux/windows keep their matrix.
 PLATFORMS := darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: build build-all package verify-release test vet-tags clean runtime-image help
+.PHONY: build build-all package verify-release test vet-tags clean runtime-image runtime-lock help
 
 ## build: Build binary for the current OS/Arch → ./dist/data-toolbox-mcp
 build:
@@ -115,6 +115,14 @@ clean:
 ## runtime-image: Convenience wrapper around `data-toolbox-mcp build-runtime` (ADR-0005)
 runtime-image: build
 	$(BIN_DIR)/$(BINARY) build-runtime
+
+## runtime-lock: Re-resolve runtime/requirements.in into the hash-locked
+## runtime/requirements.lock (ADR-0007, amended v0.8.4). Review the version
+## diff, update internal/runtime/manifest.go, rebuild the image and release.
+runtime-lock:
+	uv pip compile runtime/requirements.in --universal --python-version 3.12 \
+		--generate-hashes --custom-compile-command 'make runtime-lock' \
+		-o runtime/requirements.lock
 
 ## help: Show available targets
 help:

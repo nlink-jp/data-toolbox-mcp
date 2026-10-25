@@ -46,9 +46,11 @@ The server is LLM-agnostic: it speaks plain MCP over stdio and never talks to an
 # 1. Build the binary (signed with Developer ID on macOS if the cert is in your keychain)
 make build
 
-# 2. Build the runtime container image (~2 min). Re-run it to take security
-#    updates: every build starts without the layer cache, pulls a newer
-#    python:3.12-slim if there is one, and upgrades the base's packages.
+# 2. Build the runtime container image (~2 min). The base is pinned by digest
+#    and the Python packages are installed from a hash-locked list
+#    (runtime/requirements.lock), so you get exactly what this release was
+#    tested with. Re-running it takes Debian's signed security updates; new
+#    Python packages and a new base arrive with a new release of this binary.
 #    After a rebuild, restart the MCP server (or its client): a workspace
 #    container that is already running keeps the image it started from.
 #    An image from the same version stays untagged (`podman image prune`);

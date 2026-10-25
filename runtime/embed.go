@@ -7,5 +7,9 @@ package runtime
 
 import "embed"
 
-//go:embed Dockerfile
+// requirements.lock is the only package list the image installs from;
+// requirements.in is its input for `make runtime-lock` and is embedded so the
+// two travel together (ADR-0007, amended v0.8.4).
+//
+//go:embed Dockerfile requirements.lock requirements.in
 var FS embed.FS

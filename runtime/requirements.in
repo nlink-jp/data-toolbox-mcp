@@ -1,0 +1,16 @@
+# Input to `make runtime-lock`, which resolves it into requirements.lock with
+# every version pinned and every distribution's SHA256 (ADR-0007, amended
+# v0.8.4). The image installs only the lock, with --require-hashes; this file
+# is never installed directly.
+#
+# pyarrow and Pillow take a floor: both ship fixes only in their newest line,
+# so a ~= pin could never take one (CVE-2026-111497 in Arrow's bundled Brotli;
+# CVE-2026-25990, fixed in Pillow 12.1.1). The rest stay on their major line.
+# A floor here moves nothing by itself: a new version reaches the image only
+# when the lock is regenerated, reviewed and released.
+duckdb~=1.1
+pandas~=2.2
+polars~=1.8
+pyarrow>=18.0
+matplotlib~=3.10
+Pillow>=12.1.1

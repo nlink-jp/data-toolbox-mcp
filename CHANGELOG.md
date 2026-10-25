@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The runtime image installs only what was checked.** v0.8.3 made a rebuild
+  pull the newest `python:3.12-slim` (`--pull=newer`) and resolve pyarrow and
+  Pillow with no upper bound — and, through `~=`, the newest patch release of
+  everything else — from PyPI without verifying any of it, so a compromised
+  upload would have reached every user on their next rebuild. The base is now
+  pinned by its multi-arch index digest, the pull policy is gone, and the
+  Python packages are installed with `pip install --require-hashes --no-deps`
+  from `runtime/requirements.lock`: 18 packages, dependencies included, each at
+  one version with the SHA256 of every distribution. A lock with one hash
+  altered is refused; the amd64 wheels match the lock as the arm64 ones do.
+  The installed versions are unchanged from v0.8.3. `describe_runtime` now
+  advertises exact versions.
+- **How updates arrive changes.** Re-running `build-runtime` takes Debian's
+  security updates (apt verifies their signatures) but no longer new Python
+  packages or a new base: those come with a new release, after
+  `make runtime-lock` regenerates the lock from `runtime/requirements.in` and
+  the version diff is reviewed. ADR-0005 and ADR-0007 are amended.
+
 ## [0.8.3] - 2026-10-25
 
 ### Fixed

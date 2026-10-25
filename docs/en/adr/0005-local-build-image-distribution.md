@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-05
 - Driver: magi
-- Revisions: 2026-10-25 — builds bypass the layer cache, pull a newer base, and upgrade the base's packages, so re-running `build-runtime` takes security updates (v0.8.3)
+- Revisions: 2026-10-25 — builds bypass the layer cache, pull a newer base, and upgrade the base's packages, so re-running `build-runtime` takes security updates (v0.8.3); base pinned by digest and the pull policy dropped, so a rebuild reproduces the release and takes only Debian's signed updates (v0.8.4)
 - Generalises to: other container-based tools in nlink-jp
 
 ---
@@ -66,6 +66,7 @@ If, in Phase 2+, multiple users ask for lower setup friction, a separate ADR wil
   - Every rebuild now takes the network for the base pull as well as `pip install` (which already needed it), and gets a new image ID. An image built by the same version is left untagged (`podman image prune` removes it); one built by an earlier version keeps its `:<version>` tag and needs `podman rmi`. The layer-cache sharing that ADR-0007 lists as a positive no longer applies to this image's own layers
   - **Without registry access a rebuild keeps the old base.** podman suppresses a pull error when a local image exists (`man podman-build`, `--pull`), so the build continues on the stale `python:3.12-slim`. `pip install` needs the network anyway, so this matters only where the registry alone is unreachable
   - **A rebuild does not reach running workspaces.** `Manager.Ensure` reuses an existing container by name without checking its image, and containers are removed when the server exits (`stop_on_exit = true`, the default). After a rebuild the server, or the client that starts it, must be restarted; with `stop_on_exit = false`, stale `app=data-toolbox-mcp` containers have to be removed by hand
+  - **Amendment (2026-10-25, v0.8.4): a rebuild reproduces the release; it does not fetch what nobody checked.** v0.8.3 made a rebuild pull the newest `python:3.12-slim` (`--pull=newer`) and resolve unbounded Python versions. That took fixes, and with them whatever any upstream published next, unverified, onto every user's machine — a supply-chain exposure the organization's rule (verify what is fetched by its SHA256) forbids. The base is now pinned by its multi-arch index digest (`python:3.12-slim@sha256:a0f57064…`, which resolves amd64 and arm64), and `--pull=newer` is gone: `buildArgs` is `build --no-cache`. The Python packages come from a hash-locked list (ADR-0007, amended v0.8.4). What a rebuild still takes on its own is Debian's security updates through `apt-get upgrade`, whose archive signatures apt verifies; that is why `--no-cache` stays. A new base or new Python packages arrive with a new release of this binary, after the change is reviewed. `TestDockerfilePinsBaseByDigest` and `TestBuildArgsBypassCache` hold it. The v0.8.3 sub-bullets about refreshing the base and about pull errors offline no longer apply
 - Keeping versions aligned between `make build` and `make runtime-image` becomes the user's responsibility (the README must establish the convention)
 
 ## Alternatives Considered
