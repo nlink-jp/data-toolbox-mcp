@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-25
+
 ### Fixed
 
 - **Re-running `build-runtime` now takes security updates.** It ran a plain
