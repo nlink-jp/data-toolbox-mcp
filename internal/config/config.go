@@ -5,11 +5,12 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/BurntSushi/toml"
+	"github.com/nlink-jp/toml"
 )
 
 // Config is the parsed contents of config.toml.
@@ -123,11 +124,13 @@ func SearchPaths() []string {
 // Missing fields keep the values from Default().
 func Load(path string) (*Config, error) {
 	cfg := Default()
-	meta, err := toml.DecodeFile(path, cfg)
-	if err != nil {
+	_, err := toml.DecodeFile(path, cfg)
+	var unknown *toml.UnknownKeysError
+	if err != nil && !errors.As(err, &unknown) {
 		return nil, fmt.Errorf("load %s: %w", path, err)
 	}
-	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
+	if unknown != nil {
+		undecoded := unknown.Keys
 		return nil, fmt.Errorf("unknown config keys: %v", undecoded)
 	}
 	// Removed keys are named, not ignored: an operator who wrote a
