@@ -15,6 +15,7 @@ DuckDB + containerized Python execution exposed as a single-binary MCP server (s
 - `make runtime-image` — builds the Podman runtime image (wraps `data-toolbox-mcp build-runtime`)
 - `make runtime-lock` — re-resolves `runtime/requirements.in` into the hash-locked `runtime/requirements.lock` (needs `uv`; review the diff before committing)
 - `make build-all` — cross-compile for darwin/linux × arm64/amd64
+- `make vuln` — govulncheck over the build; `make package` runs it first and stops on a finding
 - `make verify-release` — gate: notarized, fresh, runs at this version, clean linux archives (run before upload)
 
 Direct `go build` is **forbidden** by project convention; the wrapped form sets `-ldflags -X cmd.Version=...` from `git describe`.
